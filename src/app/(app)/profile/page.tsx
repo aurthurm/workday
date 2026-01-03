@@ -26,8 +26,8 @@ export default function ProfilePage() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-2xl font-display text-ink-900">My Profile</h3>
-        <p className="text-sm text-ink-600">
+        <h3 className="text-2xl font-display text-foreground">My Profile</h3>
+        <p className="text-sm text-muted-foreground">
           Your account details and workspace roles.
         </p>
       </div>
@@ -36,12 +36,12 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle>Account</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2 text-sm text-ink-700">
+        <CardContent className="space-y-2 text-sm text-muted-foreground">
           <p>
-            <span className="font-medium text-ink-900">Name:</span> {data.user.name}
+            <span className="font-medium text-foreground">Name:</span> {data.user.name}
           </p>
           <p>
-            <span className="font-medium text-ink-900">Email:</span> {data.user.email}
+            <span className="font-medium text-foreground">Email:</span> {data.user.email}
           </p>
         </CardContent>
       </Card>
@@ -54,13 +54,13 @@ export default function ProfilePage() {
           {data.memberships.map((membership) => (
             <div
               key={membership.workspaceId}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ink-200/70 bg-ink-50/60 p-3 text-sm"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/60 p-3 text-sm"
             >
               <div>
-                <p className="font-medium text-ink-900">
+                <p className="font-medium text-foreground">
                   {membership.workspaceName}
                 </p>
-                <p className="text-ink-600">{membership.workspaceType}</p>
+                <p className="text-muted-foreground">{membership.workspaceType}</p>
               </div>
               <Badge variant="outline">{membership.role}</Badge>
             </div>

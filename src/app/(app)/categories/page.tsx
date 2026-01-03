@@ -9,12 +9,17 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 
 type CategoryResponse = {
-  categories: Array<{ id: string; name: string }>;
+  categories: Array<{ id: string; name: string; color: string }>;
   role: "member" | "supervisor" | "admin";
 };
 
 export default function CategoriesPage() {
   const [name, setName] = useState("");
+  const [color, setColor] = useState("#64748b");
+  const [editId, setEditId] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editColor, setEditColor] = useState("#64748b");
+  const [feedback, setFeedback] = useState("");
   const { data, refetch, error } = useQuery({
     queryKey: ["categories"],
     queryFn: () => apiFetch<CategoryResponse>("/api/categories"),
@@ -24,18 +29,41 @@ export default function CategoriesPage() {
     mutationFn: () =>
       apiFetch("/api/categories", {
         method: "POST",
-        body: { name },
+        body: { name, color },
       }),
     onSuccess: () => {
       setName("");
+      setColor("#64748b");
+      setFeedback("");
       refetch();
     },
+    onError: (error: Error) => setFeedback(error.message),
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) =>
       apiFetch(`/api/categories?id=${id}`, { method: "DELETE" }),
-    onSuccess: () => refetch(),
+    onSuccess: () => {
+      setFeedback("");
+      refetch();
+    },
+    onError: (error: Error) => setFeedback(error.message),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: (payload: { id: string; name: string; color: string }) =>
+      apiFetch("/api/categories", {
+        method: "PUT",
+        body: payload,
+      }),
+    onSuccess: () => {
+      setEditId(null);
+      setEditName("");
+      setEditColor("#64748b");
+      setFeedback("");
+      refetch();
+    },
+    onError: (error: Error) => setFeedback(error.message),
   });
 
   const canManage = data?.role !== "member";
@@ -47,15 +75,15 @@ export default function CategoriesPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-2xl font-display text-ink-900">Categories</h3>
-        <p className="text-sm text-ink-600">
+        <h3 className="text-2xl font-display text-foreground">Categories</h3>
+        <p className="text-sm text-muted-foreground">
           Admins and supervisors can manage task categories for the workspace.
         </p>
       </div>
 
-      {error && (
+      {(error || feedback) && (
         <p className="text-sm text-destructive">
-          {(error as Error).message}
+          {feedback || (error as Error).message}
         </p>
       )}
 
@@ -65,26 +93,109 @@ export default function CategoriesPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           {!canManage && (
-            <p className="text-sm text-ink-500">
+            <p className="text-sm text-muted-foreground">
               You don&apos;t have permission to add or remove categories.
             </p>
           )}
-          <div className="flex flex-wrap gap-2">
-            {sorted.map((category) => (
-              <Badge key={category.id} variant="outline" className="gap-2">
-                {category.name}
-                {canManage && (
-                  <button
-                    className="text-ink-500 hover:text-ink-900"
-                    onClick={() => deleteMutation.mutate(category.id)}
-                  >
-                    ×
-                  </button>
-                )}
-              </Badge>
-            ))}
+          <div className="space-y-2">
+            {sorted.map((category) => {
+              const isEditing = editId === category.id;
+              return (
+                <div
+                  key={category.id}
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border/70 bg-card px-3 py-2"
+                >
+                  {isEditing ? (
+                    <>
+                      <Input
+                        className="min-w-[180px] flex-1"
+                        value={editName}
+                        onChange={(event) => setEditName(event.target.value)}
+                      />
+                      <Input
+                        type="color"
+                        className="h-9 w-12 p-1"
+                        value={editColor}
+                        onChange={(event) => setEditColor(event.target.value)}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <span className="text-sm text-foreground">
+                        {category.name}
+                      </span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {category.color}
+                      </Badge>
+                    </>
+                  )}
+
+                  <div className="ml-auto flex items-center gap-2">
+                    {canManage && (
+                      <>
+                        {isEditing ? (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                updateMutation.mutate({
+                                  id: category.id,
+                                  name: editName.trim(),
+                                  color: editColor,
+                                })
+                              }
+                              disabled={!editName.trim()}
+                            >
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditId(null);
+                                setEditName("");
+                                setEditColor("#64748b");
+                                setFeedback("");
+                              }}
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setEditId(category.id);
+                                setEditName(category.name);
+                                setEditColor(category.color);
+                                setFeedback("");
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => deleteMutation.mutate(category.id)}
+                            >
+                              Delete
+                            </Button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
             {sorted.length === 0 && (
-              <p className="text-sm text-ink-500">No categories yet.</p>
+              <p className="text-sm text-muted-foreground">No categories yet.</p>
             )}
           </div>
           {canManage && (
@@ -94,6 +205,13 @@ export default function CategoriesPage() {
                 placeholder="Add category"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
+              />
+              <Input
+                type="color"
+                className="h-9 w-12 p-1"
+                value={color}
+                onChange={(event) => setColor(event.target.value)}
+                title="Pick a color"
               />
               <Button
                 onClick={() => createMutation.mutate()}

@@ -56,7 +56,7 @@ export async function GET(request: Request) {
 
   const tasksByPlan = db
     .prepare(
-      "SELECT id, daily_plan_id, title, category, status, estimated_minutes, actual_minutes, start_time, end_time FROM tasks WHERE daily_plan_id IN (SELECT id FROM daily_plans WHERE workspace_id = ? AND date = ?) ORDER BY position ASC, created_at ASC"
+      "SELECT id, daily_plan_id, title, category, status, estimated_minutes, actual_minutes, due_date, recurrence_rule, repeat_till, start_time, end_time FROM tasks WHERE daily_plan_id IN (SELECT id FROM daily_plans WHERE workspace_id = ? AND date = ?) ORDER BY position ASC, created_at ASC"
     )
     .all(active.workspace.id, date) as Array<{
     id: string;

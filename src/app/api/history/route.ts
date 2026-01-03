@@ -53,6 +53,9 @@ export async function GET(request: Request) {
               status,
               estimated_minutes,
               actual_minutes,
+              due_date,
+              recurrence_rule,
+              repeat_till,
               start_time,
               end_time
        FROM tasks
@@ -73,6 +76,9 @@ export async function GET(request: Request) {
     status: string;
     estimated_minutes: number | null;
     actual_minutes: number | null;
+    due_date: string | null;
+    recurrence_rule: string | null;
+    repeat_till: string | null;
     start_time: string | null;
     end_time: string | null;
   }>;

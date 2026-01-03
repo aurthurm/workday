@@ -33,7 +33,7 @@ type TeamPlansResponse = {
       id: string;
       title: string;
       category: string;
-      status: "planned" | "done" | "skipped";
+      status: "planned" | "done" | "skipped" | "cancelled";
       estimated_minutes: number | null;
       actual_minutes: number | null;
       start_time: string | null;
@@ -48,6 +48,15 @@ type TeamPlansResponse = {
     }>;
   }>;
 };
+
+const defaultCategories = [
+  { name: "Admin", color: "#2563eb" },
+  { name: "Technical", color: "#0f766e" },
+  { name: "Field", color: "#16a34a" },
+  { name: "Other", color: "#64748b" },
+];
+const normalizeStatus = (status: string) =>
+  status === "skipped" ? "cancelled" : status;
 
 export default function SupervisorPage() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -66,6 +75,23 @@ export default function SupervisorPage() {
     queryKey: ["team-plans", dateValue],
     queryFn: () => apiFetch<TeamPlansResponse>(`/api/team/plans?date=${dateValue}`),
   });
+  const categoriesQuery = useQuery({
+    queryKey: ["categories"],
+    queryFn: () =>
+      apiFetch<{
+        categories: Array<{ id: string; name: string; color: string }>;
+      }>("/api/categories"),
+  });
+  const categoryList = categoriesQuery.data?.categories ?? defaultCategories;
+  const categoryColors = useMemo(
+    () =>
+      new Map(
+        categoryList.map((category) => [category.name, category.color] as const)
+      ),
+    [categoryList]
+  );
+  const getCategoryColor = (name: string) =>
+    categoryColors.get(name) ?? "#64748b";
 
   const reviewMutation = useMutation({
     mutationFn: (planId: string) =>
@@ -116,8 +142,8 @@ export default function SupervisorPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h3 className="text-2xl font-display text-ink-900">Team overview</h3>
-          <p className="text-sm text-ink-600">
+          <h3 className="text-2xl font-display text-foreground">Team overview</h3>
+          <p className="text-sm text-muted-foreground">
             Encourage progress and remove blockers.
           </p>
         </div>
@@ -159,7 +185,7 @@ export default function SupervisorPage() {
               setSelectedTaskId(null);
             }}
           >
-            <SelectTrigger className="w-[220px] bg-white">
+            <SelectTrigger className="w-[220px] bg-card">
               <SelectValue placeholder="Filter member" />
             </SelectTrigger>
             <SelectContent>
@@ -194,15 +220,15 @@ export default function SupervisorPage() {
               )}
             </div>
           </CardHeader>
-          <CardContent className="space-y-4 text-sm text-ink-600">
+          <CardContent className="space-y-4 text-sm text-muted-foreground">
             <div className="flex flex-wrap items-center gap-4">
               <span>{activePlan.user_email}</span>
               <span>Visibility: {activePlan.visibility}</span>
               <span>Submitted: {activePlan.submitted ? "Yes" : "No"}</span>
             </div>
             <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-              <div className="space-y-3 rounded-2xl border border-ink-200/70 bg-ink-50/60 p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-ink-500">
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/60 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Tasks for the day
                 </p>
                 <div className="space-y-2">
@@ -211,25 +237,29 @@ export default function SupervisorPage() {
                       key={task.id}
                       className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
                         task.id === activeTask?.id
-                          ? "border-tide-500 bg-white shadow-lg ring-1 ring-tide-200/70"
-                          : "border-ink-200/70 bg-white/70 hover:border-tide-200"
+                          ? "border-tide-500 bg-card shadow-lg ring-1 ring-tide-200/70"
+                          : "border-border/70 bg-card/70 hover:border-tide-200"
                       }`}
                       onClick={() => setSelectedTaskId(task.id)}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-medium text-ink-900">
+                        <span className="font-medium text-foreground">
                           {task.title}
                         </span>
-                        <span className="status-pill" data-status={task.status}>
-                          {task.status}
+                        <span className="status-pill" data-status={normalizeStatus(task.status)}>
+                          {normalizeStatus(task.status)}
                         </span>
                       </div>
-                      <p className="mt-1 text-xs text-ink-500">
+                      <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ backgroundColor: getCategoryColor(task.category) }}
+                        />
                         {task.category} · est {task.estimated_minutes ?? "-"} /
                         actual {task.actual_minutes ?? "-"}
                       </p>
                       {(task.start_time || task.end_time) && (
-                        <p className="text-xs text-ink-500">
+                        <p className="text-xs text-muted-foreground">
                           {task.start_time
                             ? `Start ${new Date(
                                 task.start_time
@@ -253,30 +283,36 @@ export default function SupervisorPage() {
                   ))}
                 </div>
               </div>
-              <div className="space-y-3 rounded-2xl border border-ink-200/70 bg-white p-4">
+              <div className="space-y-3 rounded-2xl border border-border/70 bg-card p-4">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs uppercase tracking-[0.2em] text-ink-500">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                     Task detail
                   </p>
                   {activeTask && (
-                    <span className="status-pill" data-status={activeTask.status}>
-                      {activeTask.status}
+                    <span className="status-pill" data-status={normalizeStatus(activeTask.status)}>
+                      {normalizeStatus(activeTask.status)}
                     </span>
                   )}
                 </div>
                 {activeTask ? (
                   <div className="space-y-3">
                     <div>
-                      <p className="text-base font-medium text-ink-900">
+                      <p className="text-base font-medium text-foreground">
                         {activeTask.title}
                       </p>
-                      <p className="text-xs text-ink-500">
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{
+                            backgroundColor: getCategoryColor(activeTask.category),
+                          }}
+                        />
                         {activeTask.category} · est{" "}
                         {activeTask.estimated_minutes ?? "-"} / actual{" "}
                         {activeTask.actual_minutes ?? "-"}
                       </p>
                       {(activeTask.start_time || activeTask.end_time) && (
-                        <p className="text-xs text-ink-500">
+                        <p className="text-xs text-muted-foreground">
                           {activeTask.start_time
                             ? `Start ${new Date(
                                 activeTask.start_time
@@ -298,7 +334,7 @@ export default function SupervisorPage() {
                       )}
                     </div>
                     <div className="space-y-2">
-                      <p className="text-xs uppercase tracking-[0.2em] text-ink-500">
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                         Task comments
                       </p>
                       {activePlan.comments
@@ -306,10 +342,10 @@ export default function SupervisorPage() {
                         .map((note) => (
                           <div
                             key={note.id}
-                            className="rounded-lg border border-ink-200/70 bg-ink-50/70 px-3 py-2 text-xs"
+                            className="rounded-lg border border-border/70 bg-muted/70 px-3 py-2 text-xs"
                           >
-                            <p className="text-ink-700">{note.content}</p>
-                            <div className="mt-2 flex items-center gap-2 text-[11px] text-ink-500">
+                            <p className="text-muted-foreground">{note.content}</p>
+                            <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                               <Badge variant="outline">{note.author_name}</Badge>
                               <span>{formatRelativeTime(note.created_at)}</span>
                             </div>
@@ -348,14 +384,14 @@ export default function SupervisorPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-ink-500">
+                  <p className="text-sm text-muted-foreground">
                     No tasks for this plan.
                   </p>
                 )}
               </div>
             </div>
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-[0.2em] text-ink-500">
+              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                 Plan comments
               </p>
               {activePlan.comments
@@ -363,10 +399,10 @@ export default function SupervisorPage() {
                 .map((note) => (
                   <div
                     key={note.id}
-                    className="rounded-lg border border-ink-200/70 bg-ink-50/70 px-3 py-2 text-xs"
+                    className="rounded-lg border border-border/70 bg-muted/70 px-3 py-2 text-xs"
                   >
-                    <p className="text-ink-700">{note.content}</p>
-                    <div className="mt-2 flex items-center gap-2 text-[11px] text-ink-500">
+                    <p className="text-muted-foreground">{note.content}</p>
+                    <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                       <Badge variant="outline">{note.author_name}</Badge>
                       <span>{formatRelativeTime(note.created_at)}</span>
                     </div>

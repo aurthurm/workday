@@ -85,6 +85,35 @@
   --sidebar-ring: rgba(47, 138, 128, 0.4);
 }
 
+.dark {
+  --background: #14110e;
+  --foreground: #f3efe9;
+  --card: #1f1c18;
+  --card-foreground: #f3efe9;
+  --popover: #1f1c18;
+  --popover-foreground: #f3efe9;
+  --primary: #4ea59c;
+  --primary-foreground: #f7f4ef;
+  --secondary: #2b2620;
+  --secondary-foreground: #e2dbd1;
+  --muted: #2b2620;
+  --muted-foreground: #b7aa99;
+  --accent: #2f403c;
+  --accent-foreground: #e6f2ef;
+  --destructive: #d06654;
+  --border: rgba(247, 244, 239, 0.16);
+  --input: rgba(247, 244, 239, 0.2);
+  --ring: rgba(124, 192, 183, 0.35);
+  --sidebar: #1a1612;
+  --sidebar-foreground: #f3efe9;
+  --sidebar-primary: #4ea59c;
+  --sidebar-primary-foreground: #f7f4ef;
+  --sidebar-accent: #23302c;
+  --sidebar-accent-foreground: #e6f2ef;
+  --sidebar-border: rgba(247, 244, 239, 0.12);
+  --sidebar-ring: rgba(124, 192, 183, 0.35);
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -116,5 +145,29 @@
   .status-pill[data-status="skipped"] {
     background-color: #ece6dc;
     color: #5f5142;
+  }
+  .status-pill[data-status="cancelled"] {
+    background-color: #ece6dc;
+    color: #5f5142;
+  }
+  .status-pill[data-status="unplanned"] {
+    background-color: #f1f5f9;
+    color: #475569;
+  }
+}
+
+@layer utilities {
+  .scrollbar-thin {
+    scrollbar-width: thin;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgba(71, 85, 105, 0.35);
+    border-radius: 999px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background-color: transparent;
   }
 }

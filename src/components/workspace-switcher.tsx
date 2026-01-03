@@ -52,18 +52,18 @@ export function WorkspaceSwitcher() {
   const canCreate = activeRole === "admin";
 
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-ink-200/70 bg-white/80 p-4 shadow-inset">
+    <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-inset">
       <div>
-        <p className="text-xs uppercase tracking-[0.2em] text-ink-500">
+        <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
           Workspace
         </p>
-        <p className="text-sm text-ink-700">Switch context</p>
+        <p className="text-sm text-muted-foreground">Switch context</p>
       </div>
       <Select
         value={activeId || undefined}
         onValueChange={(value) => switchMutation.mutate(value)}
       >
-        <SelectTrigger className="w-full bg-white">
+      <SelectTrigger className="w-full bg-background">
           <SelectValue placeholder="Choose workspace" />
         </SelectTrigger>
         <SelectContent>

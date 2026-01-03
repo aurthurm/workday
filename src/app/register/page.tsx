@@ -33,21 +33,21 @@ export default function RegisterPage() {
           <p className="text-sm uppercase tracking-[0.2em] text-tide-700">
             Workday
           </p>
-          <h1 className="mt-3 text-4xl font-display text-ink-900">
+          <h1 className="mt-3 text-4xl font-display text-foreground">
             Start your workspace
           </h1>
-          <p className="mt-2 text-base text-ink-600">
+          <p className="mt-2 text-base text-muted-foreground">
             Create a calm, lightweight place for daily planning.
           </p>
         </div>
 
-        <Card className="border border-ink-200/70 bg-white/90 shadow-card">
+        <Card className="border border-border/70 bg-card/90 shadow-card">
           <CardHeader>
             <CardTitle className="text-xl">Create account</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-ink-700">Name</label>
+              <label className="text-sm font-medium text-muted-foreground">Name</label>
               <Input
                 value={form.name}
                 onChange={(event) =>
@@ -57,7 +57,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-ink-700">Email</label>
+              <label className="text-sm font-medium text-muted-foreground">Email</label>
               <Input
                 type="email"
                 value={form.email}
@@ -68,7 +68,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-ink-700">
+              <label className="text-sm font-medium text-muted-foreground">
                 Password
               </label>
               <Input
@@ -81,7 +81,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-ink-700">
+              <label className="text-sm font-medium text-muted-foreground">
                 Workspace name
               </label>
               <Input

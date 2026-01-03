@@ -45,10 +45,22 @@ export async function POST(request: Request) {
     type: "personal",
   });
   createMembership({ userId, workspaceId, role: "admin" });
-  ["Admin", "Technical", "Field", "Other"].forEach((category) => {
+  const defaultCategories = [
+    { name: "Admin", color: "#2563eb" },
+    { name: "Technical", color: "#0f766e" },
+    { name: "Field", color: "#16a34a" },
+    { name: "Other", color: "#64748b" },
+  ];
+  defaultCategories.forEach((category) => {
     db.prepare(
-      "INSERT INTO categories (id, workspace_id, name, created_at) VALUES (?, ?, ?, ?)"
-    ).run(randomUUID(), workspaceId, category, new Date().toISOString());
+      "INSERT INTO categories (id, workspace_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)"
+    ).run(
+      randomUUID(),
+      workspaceId,
+      category.name,
+      category.color,
+      new Date().toISOString()
+    );
   });
 
   await setSession({ userId, email, name });
