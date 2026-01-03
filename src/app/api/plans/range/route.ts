@@ -24,6 +24,8 @@ export async function GET(request: Request) {
   if (!active?.workspace) {
     return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
   }
+  const defaultVisibility =
+    active.workspace.type === "personal" ? "private" : "team";
 
   const plans = db
     .prepare(
@@ -179,14 +181,14 @@ export async function GET(request: Request) {
           userId: session.userId,
           workspaceId: active.workspace.id,
           date: day,
-          visibility: "team",
+          visibility: defaultVisibility,
         });
         plan = {
           id: planId,
           user_id: session.userId,
           workspace_id: active.workspace.id,
           date: day,
-          visibility: "team",
+          visibility: defaultVisibility,
           submitted: 0,
           reviewed: 0,
         };

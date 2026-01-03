@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
-import { getMembershipForUser } from "@/lib/data";
+import { getMembershipForUser, getWorkspaceById } from "@/lib/data";
 
 const now = () => new Date().toISOString();
 
@@ -30,6 +30,12 @@ export async function PUT(
   if (!membership) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
+  const workspace = getWorkspaceById(plan.workspace_id);
+  if (!workspace) {
+    return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+  }
+  const lockedVisibility =
+    workspace.type === "personal" ? "private" : "team";
 
   const body = (await request.json()) as {
     visibility?: "team" | "private";
@@ -54,7 +60,7 @@ export async function PUT(
       db.prepare(
         "UPDATE daily_plans SET visibility = COALESCE(?, visibility), submitted = COALESCE(?, submitted), updated_at = ? WHERE id = ?"
       ).run(
-        body.visibility ?? null,
+        lockedVisibility,
         typeof body.submitted === "boolean" ? Number(body.submitted) : null,
         now(),
         plan.id

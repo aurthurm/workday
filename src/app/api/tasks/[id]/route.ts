@@ -175,6 +175,9 @@ export async function PUT(
       })
     : null;
   const hasStartTimeUpdate = typeof body.startTime !== "undefined";
+  const hasEndTimeUpdate =
+    typeof body.startTime !== "undefined" ||
+    typeof body.estimatedMinutes === "number";
   const startTimeValue =
     typeof body.startTime === "string" ? body.startTime : existingStartValue;
   const startTimeIso =
@@ -250,7 +253,7 @@ export async function PUT(
     repeatTillValue,
     hasStartTimeUpdate ? 1 : 0,
     startTimeIso,
-    hasStartTimeUpdate ? 1 : 0,
+    hasEndTimeUpdate ? 1 : 0,
     endTimeValue,
     typeof body.position === "number" ? body.position : null,
     hasRecurrenceUpdate ? recurrenceRuleValue : null,

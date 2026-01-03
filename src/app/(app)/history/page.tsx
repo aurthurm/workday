@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { ChevronLeft, ChevronRight, RotateCcw, Plus } from "lucide-react";
 import { TaskListItem } from "@/components/task-list-item";
+import { TaskDetailPanel } from "@/components/task-detail-panel";
 
 type HistoryResponse = {
   plans: Array<{
@@ -34,11 +35,24 @@ type HistoryResponse = {
       status: "planned" | "done" | "skipped" | "cancelled";
       estimated_minutes: number | null;
       actual_minutes: number | null;
+      notes: string | null;
+      priority: "high" | "medium" | "low" | "none";
       due_date: string | null;
       recurrence_rule: string | null;
+      recurrence_time: string | null;
       repeat_till: string | null;
       start_time: string | null;
       end_time: string | null;
+      attachments: Array<{ id: string; url: string }>;
+      subtasks: Array<{
+        id: string;
+        title: string;
+        completed: number;
+        estimated_minutes: number | null;
+        actual_minutes: number | null;
+        start_time: string | null;
+        end_time: string | null;
+      }>;
     }>;
     comments: Array<{
       id: string;
@@ -94,34 +108,6 @@ const defaultCategories = [
   { name: "Field", color: "#16a34a" },
   { name: "Other", color: "#64748b" },
 ];
-const MINUTES_IN_DAY = 1440;
-const PX_PER_MIN = 1;
-
-const clamp = (value: number, min: number, max: number) =>
-  Math.min(max, Math.max(min, value));
-const toMinutesFromMidnight = (date: Date) =>
-  date.getHours() * 60 + date.getMinutes();
-const minutesToHHMM = (minutes: number) => {
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
-};
-const snapMinutes = (minutes: number, snap = 5) =>
-  Math.round(minutes / snap) * snap;
-const getTaskDurationMinutes = (task: {
-  start_time: string | null;
-  end_time: string | null;
-  estimated_minutes: number | null;
-}) => {
-  if (!task.start_time) return 0;
-  const start = new Date(task.start_time);
-  if (task.end_time) {
-    const end = new Date(task.end_time);
-    return Math.max(1, Math.round((end.getTime() - start.getTime()) / 60000));
-  }
-  if (task.estimated_minutes) return Math.max(1, task.estimated_minutes);
-  return 15;
-};
 const normalizeStatus = (status: string) =>
   status === "skipped" ? "cancelled" : status;
 const isCancelledStatus = (status: string) =>
@@ -146,6 +132,9 @@ const toDateKey = (date: Date) => {
   }
   return date.toISOString().slice(0, 10);
 };
+const statusLabel = (status: string) => normalizeStatus(status);
+const statuses = ["planned", "done", "cancelled", "unplanned"] as const;
+const priorities = ["none", "low", "medium", "high"] as const;
 
 const isDateKey = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
@@ -240,7 +229,7 @@ export default function HistoryPage() {
       console.error("todayKey is not defined during initialization");
       return [];
     }
-    const endDay = addDays(todayKey, 2);
+    const endDay = addDays(todayKey, 4);
     if (!endDay || endDay <= todayKey) {
       console.error("Invalid endDay during initialization", { todayKey, endDay });
       return [todayKey];
@@ -322,6 +311,14 @@ export default function HistoryPage() {
     }
   }, [activePlan?.tasks, selectedTaskId]);
 
+  useEffect(() => {
+    if (view === "kanban" && selectedKanbanDay) {
+      window.dispatchEvent(
+        new CustomEvent("kanban:daySelected", { detail: { day: selectedKanbanDay } })
+      );
+    }
+  }, [view, selectedKanbanDay]);
+
   const loadRange = async (start: string, end: string) => {
     try {
       if (!isDateKey(start) || !isDateKey(end)) {
@@ -351,6 +348,20 @@ export default function HistoryPage() {
     }
   };
 
+  useEffect(() => {
+    const handlePlansUpdated = () => {
+      if (view === "listview") {
+        historyQuery.refetch();
+        return;
+      }
+      if (view === "kanban" && selectedKanbanDay) {
+        loadRange(selectedKanbanDay, selectedKanbanDay);
+      }
+    };
+    window.addEventListener("plans:updated", handlePlansUpdated);
+    return () => window.removeEventListener("plans:updated", handlePlansUpdated);
+  }, [historyQuery, loadRange, selectedKanbanDay, view]);
+
   const extendDays = async (direction: "prev" | "next") => {
     console.log("extendDays called:", direction);
 
@@ -359,7 +370,7 @@ export default function HistoryPage() {
       return;
     }
 
-    const extendBy = 3;
+    const extendBy = 5;
     const first = kanbanDays[0];
     const last = kanbanDays[kanbanDays.length - 1];
 
@@ -497,31 +508,31 @@ export default function HistoryPage() {
     if (kanbanViewOffset === 0) {
       lastPrevRef.current = null;
       await extendDays("prev");
-      // After loading 3 more days at the start, we're now at offset 0 showing the newly loaded days
+      // After loading 5 more days at the start, we're now at offset 0 showing the newly loaded days
     } else {
       // Just shift the view left
-      setKanbanViewOffset((prev) => Math.max(0, prev - 3));
+      setKanbanViewOffset((prev) => Math.max(0, prev - 5));
     }
   };
 
   const scrollKanbanRight = async () => {
-    const maxOffset = Math.max(0, kanbanDays.length - 3);
+    const maxOffset = Math.max(0, kanbanDays.length - 5);
 
     // If we're near the end, load more future days
-    if (kanbanViewOffset + 3 >= kanbanDays.length) {
+    if (kanbanViewOffset + 5 >= kanbanDays.length) {
       lastNextRef.current = null;
       await extendDays("next");
     }
 
     // Shift the view right
-    setKanbanViewOffset((prev) => Math.min(maxOffset + 3, prev + 3));
+    setKanbanViewOffset((prev) => Math.min(maxOffset + 5, prev + 5));
   };
 
   const resetKanbanView = async () => {
     console.log("Resetting kanban view to today");
 
-    // Reset to initial state: today + next 2 days
-    const endDay = addDays(todayKey, 2);
+    // Reset to initial state: today + next 4 days
+    const endDay = addDays(todayKey, 4);
     if (!endDay || endDay <= todayKey) {
       console.error("Invalid endDay during reset", { todayKey, endDay });
       return;
@@ -637,6 +648,7 @@ export default function HistoryPage() {
     } else {
       await historyQuery.refetch();
     }
+    window.dispatchEvent(new Event("timeline:updated"));
   };
 
   const handleCategorySave = async (
@@ -729,24 +741,6 @@ export default function HistoryPage() {
     event.dataTransfer.effectAllowed = "move";
   };
 
-  const updateSubtaskSchedule = async (
-    taskId: string,
-    subtaskId: string,
-    day: string,
-    minutes: number
-  ) => {
-    const plan = kanbanPlans[day];
-    const parentTask = plan?.tasks.find((task) => task.id === taskId);
-    const subtask = parentTask?.subtasks.find((item) => item.id === subtaskId);
-    const estimatedMinutes = subtask?.estimated_minutes ?? 30;
-    const startTime = minutesToHHMM(minutes);
-    await apiFetch(`/api/tasks/${taskId}/subtasks`, {
-      method: "PUT",
-      body: { subtaskId, startTime, estimatedMinutes },
-    });
-    await loadRange(day, day);
-  };
-
   const handleDrop = async (event: DragEvent<HTMLDivElement>, day: string) => {
     event.preventDefault();
     if (!isDraggableDay(day)) return;
@@ -762,12 +756,14 @@ export default function HistoryPage() {
           body: { subtaskId, startTime: null },
         });
         await loadRange(day, day);
+        window.dispatchEvent(new Event("timeline:updated"));
       } else if (taskId) {
         await apiFetch(`/api/tasks/${taskId}`, {
           method: "PUT",
           body: { startTime: null },
         });
         await loadRange(day, day);
+        window.dispatchEvent(new Event("timeline:updated"));
       }
       return;
     }
@@ -803,36 +799,7 @@ export default function HistoryPage() {
     } else {
       await loadRange(day, day);
     }
-  };
-
-  const handleTimelineDrop = async (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    if (!selectedKanbanDay || !isDraggableDay(selectedKanbanDay)) return;
-    const taskId = event.dataTransfer.getData("text/task-id");
-    const subtaskId = event.dataTransfer.getData("text/subtask-id");
-    const sourceDay = event.dataTransfer.getData("text/source-day");
-    if ((!taskId && !subtaskId) || !sourceDay || sourceDay !== selectedKanbanDay) {
-      return;
-    }
-
-    const el = event.currentTarget as HTMLDivElement;
-    const rect = el.getBoundingClientRect();
-    const y = event.clientY - rect.top + el.scrollTop;
-    const rawMinutes = Math.round(y / PX_PER_MIN);
-    const minutes = clamp(snapMinutes(rawMinutes, 5), 0, 1439);
-    const startTime = minutesToHHMM(minutes);
-
-    if (subtaskId && taskId) {
-      await updateSubtaskSchedule(taskId, subtaskId, selectedKanbanDay, minutes);
-      return;
-    }
-    if (taskId) {
-      await apiFetch(`/api/tasks/${taskId}`, {
-        method: "PUT",
-        body: { startTime },
-      });
-      await loadRange(selectedKanbanDay, selectedKanbanDay);
-    }
+    window.dispatchEvent(new Event("timeline:updated"));
   };
 
 
@@ -952,7 +919,7 @@ export default function HistoryPage() {
       )}
 
       {view === "listview" && plans.length > 0 && (
-        <div className="grid gap-6 lg:grid-cols-[0.8fr_1fr_1fr]">
+        <div className="grid gap-5 lg:grid-cols-[0.6fr_0.85fr_1.2fr]">
         <div className="space-y-3">
           {plans.map((plan) => {
             const commentCount = plan.comments.filter(
@@ -1070,72 +1037,17 @@ export default function HistoryPage() {
 
         {activePlan && activeTask && (
           <div className="space-y-3 rounded-2xl border border-border/70 bg-card/90 p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Task detail
-              </p>
-              <span className="status-pill" data-status={normalizeStatus(activeTask.status)}>
-                {normalizeStatus(activeTask.status)}
-              </span>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <p className="text-base font-medium text-foreground">
-                  {activeTask.title}
-                </p>
-                <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{
-                      backgroundColor: getCategoryColor(activeTask.category),
-                    }}
-                  />
-                  {activeTask.category} · est{" "}
-                  {activeTask.estimated_minutes ?? "-"} / actual{" "}
-                  {activeTask.actual_minutes ?? "-"}
-                </p>
-                {(activeTask.start_time || activeTask.end_time) && (
-                  <p className="text-xs text-muted-foreground">
-                    {activeTask.start_time
-                      ? `Start ${new Date(
-                          activeTask.start_time
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}`
-                      : "Start -"}{" "}
-                    ·{" "}
-                    {activeTask.end_time
-                      ? `End ${new Date(
-                          activeTask.end_time
-                        ).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}`
-                      : "End -"}
-                  </p>
-                )}
-              </div>
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Task comments
-              </p>
-              <div className="space-y-2">
-                {activePlan.comments
-                  .filter((comment) => comment.task_id === activeTask.id)
-                  .map((note) => (
-                    <Card
-                      key={note.id}
-                      className="rounded-lg border border-border/70 bg-muted/70 px-3 py-2 text-xs"
-                    >
-                      <p className="text-muted-foreground">{note.content}</p>
-                      <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-                        <Badge variant="outline">{note.author_name}</Badge>
-                        <span>{formatRelativeTime(note.created_at)}</span>
-                      </div>
-                    </Card>
-                  ))}
-              </div>
-            </div>
+            <TaskDetailPanel
+              task={activeTask}
+              categories={categories}
+              getCategoryColor={getCategoryColor}
+              statusLabel={statusLabel}
+              statuses={statuses}
+              priorities={priorities}
+              comments={activePlan.comments}
+              onUpdated={() => historyQuery.refetch()}
+              onDeleted={() => historyQuery.refetch()}
+            />
           </div>
         )}
         </div>
@@ -1149,8 +1061,8 @@ export default function HistoryPage() {
               <p className="text-sm text-muted-foreground">Loading more days...</p>
             </div>
           )}
-          <div className="grid grid-cols-[repeat(3,280px)_1fr] gap-3">
-            {kanbanDays.slice(kanbanViewOffset, kanbanViewOffset + 3).map((day) => {
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+            {kanbanDays.slice(kanbanViewOffset, kanbanViewOffset + 5).map((day) => {
                 const plan = kanbanPlans[day];
               const draft = taskDrafts[day] ?? {
                 title: "",
@@ -1349,277 +1261,6 @@ export default function HistoryPage() {
                 );
               })}
 
-            {/* 24-Hour Timeline Column */}
-            <div className="rounded-3xl border border-border/70 bg-card p-5 shadow-sm">
-              <div className="mb-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                  24-Hour Timeline
-                </p>
-                {selectedKanbanDay && (
-                  <p className="text-lg font-medium text-foreground">
-                    {new Date(`${selectedKanbanDay}T00:00:00`).toLocaleDateString(
-                      "en-US",
-                      { weekday: "long", month: "short", day: "numeric" }
-                    )}
-                  </p>
-                )}
-                {!selectedKanbanDay && (
-                  <p className="text-sm text-muted-foreground">
-                    Select a day to view timeline
-                  </p>
-                )}
-              </div>
-
-              {selectedKanbanDay && (
-                <div className="relative h-[600px] overflow-y-auto scrollbar-thin">
-                  {/* Unscheduled tasks section */}
-                  {(() => {
-                    const selectedPlan = kanbanPlans[selectedKanbanDay];
-                    const allTasks = selectedPlan?.tasks || [];
-                    const unscheduledTasks = allTasks.filter(task => !task.start_time);
-
-                    if (unscheduledTasks.length > 0) {
-                      return (
-                        <div className="mb-3 rounded-lg border border-border/70 bg-muted/40 p-3">
-                          <p className="mb-2 text-xs font-medium text-muted-foreground">Unscheduled</p>
-                          <div className="space-y-1">
-                            {unscheduledTasks.map((task) => (
-                              <div
-                                key={task.id}
-                                draggable={canDragDayTasks(selectedKanbanDay)}
-                                onDragStart={(event) => {
-                                  if (!selectedKanbanDay) return;
-                                  handleDragStart(event, task.id, selectedKanbanDay);
-                                }}
-                                className={`rounded-lg border px-2 py-1.5 text-xs ${
-                                  task.status === "done"
-                                    ? "border-green-300 bg-green-50 text-green-900"
-                                    : isCancelledStatus(task.status)
-                                    ? "border-gray-300 bg-gray-50 text-gray-600"
-                                    : "border-tide-300 bg-tide-50 text-tide-900"
-                                } ${
-                                  canDragDayTasks(selectedKanbanDay)
-                                    ? "cursor-grab active:cursor-grabbing"
-                                    : "cursor-not-allowed opacity-80"
-                                }`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-medium">{task.title}</span>
-                                  <Badge variant="outline" className="text-[10px] h-4 px-1">
-                                    {normalizeStatus(task.status)}
-                                  </Badge>
-                                </div>
-                                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                  <span className="inline-flex items-center gap-2">
-                                    <span
-                                      className="h-2 w-2 rounded-full"
-                                      style={{
-                                        backgroundColor: getCategoryColor(task.category),
-                                      }}
-                                    />
-                                    {task.category} · {task.estimated_minutes ?? "—"} min
-                                  </span>
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })()}
-
-                  {(() => {
-                    const selectedPlan = kanbanPlans[selectedKanbanDay];
-                    const allTasks = selectedPlan?.tasks || [];
-                    const allSubtasks = allTasks.flatMap((task) =>
-                      task.subtasks.map((subtask) => ({ subtask, parentTask: task }))
-                    );
-                    const scheduledTasks = allTasks
-                      .filter((task) => task.start_time)
-                      .map((task) => {
-                        const start = new Date(task.start_time!);
-                        const startMins = toMinutesFromMidnight(start);
-                        const duration = getTaskDurationMinutes(task);
-                        const top = startMins * PX_PER_MIN;
-                        const height = duration * PX_PER_MIN;
-                        return {
-                          kind: "task" as const,
-                          task,
-                          top,
-                          height,
-                          startMins,
-                          duration,
-                        };
-                      });
-                    const scheduledSubtasks = allSubtasks
-                      .filter((item) => item.subtask.start_time)
-                      .map((item) => {
-                        const start = new Date(item.subtask.start_time!);
-                        const startMins = toMinutesFromMidnight(start);
-                        const duration = item.subtask.end_time
-                          ? Math.max(
-                              1,
-                              Math.round(
-                                (new Date(item.subtask.end_time).getTime() -
-                                  start.getTime()) /
-                                  60000
-                              )
-                            )
-                          : item.subtask.estimated_minutes ?? 30;
-                        const top = startMins * PX_PER_MIN;
-                        const height = duration * PX_PER_MIN;
-                        return {
-                          kind: "subtask" as const,
-                          subtask: item.subtask,
-                          parentTask: item.parentTask,
-                          top,
-                          height,
-                          startMins,
-                          duration,
-                        };
-                      });
-                    const scheduledItems = [...scheduledTasks, ...scheduledSubtasks].sort(
-                      (a, b) => a.top - b.top
-                    );
-                    const timelineHeight = MINUTES_IN_DAY * PX_PER_MIN;
-
-                    return (
-                      <div className="relative h-[600px]">
-                        <div
-                          className="relative w-full"
-                          style={{ height: timelineHeight }}
-                          onDragOver={(event) => {
-                            if (selectedKanbanDay && isDraggableDay(selectedKanbanDay)) {
-                              event.preventDefault();
-                            }
-                          }}
-                          onDrop={handleTimelineDrop}
-                        >
-                          {Array.from({ length: 24 }, (_, hour) => {
-                            const top = hour * 60 * PX_PER_MIN;
-                            const label =
-                              hour === 0
-                                ? "12 AM"
-                                : hour < 12
-                                ? `${hour} AM`
-                                : hour === 12
-                                ? "12 PM"
-                                : `${hour - 12} PM`;
-
-                            return (
-                              <div
-                                key={hour}
-                                className="absolute left-0 right-0 border-t border-border/50"
-                                style={{ top }}
-                              >
-                                <div className="flex items-start gap-3">
-                                  {/* minimum height of 60px */}
-                                  <span className="w-16 pr-1 text-xs font-medium text-muted-foreground text-right border-r min-h-[60px] border-border/50">
-                                    {label}
-                                  </span>
-                                  <div className="flex-1" />
-                                </div>
-                              </div>
-                            );
-                          })}
-
-                          {scheduledItems.map((item) => {
-                            if (item.kind === "task") {
-                              const task = item.task;
-                              return (
-                                <div
-                                  key={task.id}
-                                  draggable={canDragDayTasks(selectedKanbanDay)}
-                                  onDragStart={(event) => {
-                                    if (!selectedKanbanDay) return;
-                                    handleDragStart(event, task.id, selectedKanbanDay);
-                                  }}
-                                  className={`absolute left-[64px] right-1 border p-1 text-xs text-foreground shadow-sm ${
-                                    task.status === "done"
-                                      ? "border-green-300"
-                                      : isCancelledStatus(task.status)
-                                      ? "border-gray-300"
-                                      : "border-tide-300"
-                                  } ${
-                                    canDragDayTasks(selectedKanbanDay)
-                                      ? "cursor-grab active:cursor-grabbing"
-                                      : "cursor-not-allowed"
-                                  }`}
-                                  style={{
-                                    top: item.top,
-                                    height: Math.max(30, item.height),
-                                    backgroundColor: getCategoryColor(task.category),
-                                  }}
-                                >
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="font-medium">{task.title}</span>
-                                  </div>
-                                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                    {minutesToHHMM(item.startMins)} -{" "}
-                                    {minutesToHHMM(item.startMins + item.duration)}
-                                  </p>
-                                </div>
-                              );
-                            }
-                            const subtask = item.subtask;
-                            const borderColor = getCategoryColor(item.parentTask.category);
-                            const parentStatus = item.parentTask.status;
-                            return (
-                              <div
-                                key={subtask.id}
-                                draggable={canDragDayTasks(selectedKanbanDay)}
-                                onDragStart={(event) => {
-                                  if (!selectedKanbanDay) return;
-                                  event.dataTransfer.setData("text/subtask-id", subtask.id);
-                                  event.dataTransfer.setData("text/task-id", item.parentTask.id);
-                                  event.dataTransfer.setData("text/source-day", selectedKanbanDay);
-                                  event.dataTransfer.effectAllowed = "move";
-                                }}
-                                className={`absolute left-[82px] right-4 border-l-4 border px-2 py-1 text-[11px] shadow-sm ${
-                                  parentStatus === "done"
-                                    ? "border-green-300 bg-green-50 text-green-900"
-                                    : isCancelledStatus(parentStatus)
-                                    ? "border-gray-300 bg-gray-50 text-gray-600"
-                                    : "border-border/70 bg-card text-foreground"
-                                } ${
-                                  canDragDayTasks(selectedKanbanDay)
-                                    ? "cursor-grab active:cursor-grabbing"
-                                    : "cursor-not-allowed"
-                                }`}
-                                style={{
-                                  top: item.top,
-                                  height: Math.max(30, item.height),
-                                  borderLeftColor: borderColor,
-                                }}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-medium">{subtask.title}</span>
-                                </div>
-                                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                                  {minutesToHHMM(item.startMins)} -{" "}
-                                  {minutesToHHMM(item.startMins + item.duration)} · est{" "}
-                                  {subtask.estimated_minutes ?? "—"} · act{" "}
-                                  {subtask.actual_minutes ?? "—"}
-                                </p>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {!selectedKanbanDay && (
-                <div className="flex h-[600px] items-center justify-center">
-                  <p className="text-sm text-muted-foreground">
-                    Click on a day card to view its timeline
-                  </p>
-                </div>
-              )}
-            </div>
           </div>
         </div>
       )}

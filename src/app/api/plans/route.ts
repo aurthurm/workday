@@ -96,6 +96,8 @@ export async function GET(request: Request) {
   if (!active?.workspace) {
     return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
   }
+  const defaultVisibility =
+    active.workspace.type === "personal" ? "private" : "team";
 
   const today = new Date().toISOString().slice(0, 10);
   if (date === today) {
@@ -171,17 +173,23 @@ export async function GET(request: Request) {
       userId: session.userId,
       workspaceId: active.workspace.id,
       date,
-      visibility: "team",
+      visibility: defaultVisibility,
     });
     plan = {
       id: planId,
       user_id: session.userId,
       workspace_id: active.workspace.id,
       date,
-      visibility: "team",
+      visibility: defaultVisibility,
       submitted: 0,
       reviewed: 0,
     };
+  } else if (plan.visibility !== defaultVisibility) {
+    db.prepare("UPDATE daily_plans SET visibility = ? WHERE id = ?").run(
+      defaultVisibility,
+      plan.id
+    );
+    plan.visibility = defaultVisibility;
   }
 
   recurringTemplates.forEach((template) => {
@@ -375,12 +383,14 @@ export async function POST(request: Request) {
   if (!active?.workspace) {
     return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
   }
+  const defaultVisibility =
+    active.workspace.type === "personal" ? "private" : "team";
 
   const planId = upsertDailyPlan({
     userId: session.userId,
     workspaceId: active.workspace.id,
     date: body.date,
-    visibility: body.visibility ?? "team",
+    visibility: defaultVisibility,
   });
 
   return NextResponse.json({ id: planId });

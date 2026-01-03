@@ -109,7 +109,7 @@ export async function POST(request: Request) {
   const recurrenceStartDate = recurrenceRule && planDate?.date ? planDate.date : null;
 
   db.prepare(
-    "INSERT INTO tasks (id, daily_plan_id, user_id, workspace_id, title, category, estimated_minutes, actual_minutes, status, notes, priority, due_date, start_time, end_time, recurrence_rule, recurrence_time, recurrence_active, recurrence_parent_id, recurrence_start_date, repeat_till, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)"
+    "INSERT INTO tasks (id, daily_plan_id, user_id, workspace_id, title, category, estimated_minutes, actual_minutes, status, notes, priority, due_date, start_time, end_time, recurrence_rule, recurrence_time, recurrence_active, recurrence_parent_id, recurrence_start_date, repeat_till, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)"
   ).run(
     id,
     body.dailyPlanId ?? null,

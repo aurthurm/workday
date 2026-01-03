@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Repeat, CalendarClock, ListChecks, Trash2, Clock } from "lucide-react";
+import { TaskDetailPanel } from "@/components/task-detail-panel";
 
 type TaskItem = {
   id: string;
@@ -23,7 +24,11 @@ type TaskItem = {
   start_time: string | null;
   end_time: string | null;
   due_date?: string | null;
+  notes?: string | null;
+  priority?: "high" | "medium" | "low" | "none";
+  attachments?: Array<{ id: string; url: string }>;
   recurrence_rule?: string | null;
+  recurrence_time?: string | null;
   subtasks?: Array<{
     id: string;
     title: string;
@@ -64,6 +69,7 @@ type TaskListItemProps = {
   ) => Promise<void>;
   onSetRepeatTill?: (taskId: string, day: string, repeatTill: string) => Promise<void>;
   onDeleteRepeat?: (taskId: string, day: string) => Promise<void>;
+  onTaskUpdated?: () => void;
   dueSoonDays?: number;
 };
 
@@ -86,14 +92,14 @@ export function TaskListItem({
   onSaveRecurrence,
   onSetRepeatTill,
   onDeleteRepeat,
+  onTaskUpdated,
   dueSoonDays = 3,
 }: TaskListItemProps) {
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [isEditingRecurrence, setIsEditingRecurrence] = useState(false);
   const [isShowingSubtasks, setIsShowingSubtasks] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(task.title ?? "");
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [timeDraft, setTimeDraft] = useState({
     startTime: getStartTimeInput(task.start_time),
     estimatedMinutes: task.estimated_minutes ? String(task.estimated_minutes) : "",
@@ -113,12 +119,6 @@ export function TaskListItem({
   const [repeatTillDraft, setRepeatTillDraft] = useState("");
 
   useEffect(() => {
-    if (!isEditingTitle) {
-      setTitleDraft(task.title ?? "");
-    }
-  }, [task.title, isEditingTitle]);
-
-  useEffect(() => {
     if (!isEditingTime) {
       setTimeDraft({
         startTime: getStartTimeInput(task.start_time),
@@ -129,7 +129,7 @@ export function TaskListItem({
     }
   }, [task.start_time, task.estimated_minutes, isEditingTime, getStartTimeInput]);
 
-  const canDrag = draggable && !isEditingTitle && !isEditingTime;
+  const canDrag = draggable && !isEditingTime;
   const dueBadge = (() => {
     if (!task.due_date) return null;
     const due = new Date(task.due_date);
@@ -164,6 +164,9 @@ export function TaskListItem({
     { value: "custom", label: "Custom" },
     { value: "specific_time", label: "At specific time" },
   ];
+  const statusOptions = ["planned", "done", "cancelled", "unplanned"];
+  const priorityOptions = ["none", "low", "medium", "high"];
+  const statusLabel = (value: string) => normalizeStatus(value);
 
   useEffect(() => {
     setSubtasks(task.subtasks ?? []);
@@ -301,40 +304,16 @@ export function TaskListItem({
       }
     >
       <div className="flex items-center justify-between gap-2">
-        {isEditingTitle ? (
-          <Input
-            value={titleDraft}
-            autoFocus
-            onChange={(event) => setTitleDraft(event.target.value)}
-            onBlur={async () => {
-              await onSaveTitle(task.id, day, titleDraft);
-              setIsEditingTitle(false);
-            }}
-            onKeyDown={async (event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                await onSaveTitle(task.id, day, titleDraft);
-                setIsEditingTitle(false);
-              }
-              if (event.key === "Escape") {
-                setIsEditingTitle(false);
-                setTitleDraft(task.title ?? "");
-              }
-            }}
-            className="h-8"
-          />
-        ) : (
-          <button
-            type="button"
-            className="text-left text-sm font-medium text-foreground hover:cursor-text hover:underline"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsEditingTitle(true);
-            }}
-          >
-            {task.title}
-          </button>
-        )}
+        <button
+          type="button"
+          className="text-left text-sm font-medium text-foreground hover:underline"
+          onClick={(event) => {
+            event.stopPropagation();
+            setIsDetailOpen(true);
+          }}
+        >
+          {task.title}
+        </button>
         <span className="status-pill" data-status={normalizeStatus(task.status)}>
           {normalizeStatus(task.status)}
         </span>
@@ -709,6 +688,51 @@ export function TaskListItem({
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {isDetailOpen && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-ink-900/40 p-6 backdrop-blur">
+          <div className="absolute inset-0" onClick={() => setIsDetailOpen(false)} />
+          <div
+            className="relative h-[85vh] w-[90vw] max-w-4xl overflow-y-auto rounded-2xl border border-border/70 bg-card p-6 shadow-card"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-display text-foreground">Task details</h3>
+              <Button variant="ghost" size="sm" onClick={() => setIsDetailOpen(false)}>
+                Close
+              </Button>
+            </div>
+            <TaskDetailPanel
+              task={{
+                ...task,
+                subtasks:
+                  task.subtasks?.map((subtask) => ({
+                    ...subtask,
+                    completed: subtask.completed ?? 0,
+                  })) ?? [],
+                attachments: task.attachments ?? [],
+                notes: task.notes ?? null,
+                priority: task.priority ?? "none",
+                due_date: task.due_date ?? null,
+                repeat_till: task.repeat_till ?? null,
+                recurrence_rule: task.recurrence_rule ?? null,
+                recurrence_time: task.recurrence_time ?? null,
+              }}
+              categories={categories}
+              getCategoryColor={getCategoryColor}
+              statusLabel={statusLabel}
+              statuses={statusOptions}
+              priorities={priorityOptions}
+              comments={[]}
+              onUpdated={onTaskUpdated}
+              onDeleted={() => {
+                setIsDetailOpen(false);
+                onTaskUpdated?.();
+              }}
+            />
           </div>
         </div>
       )}

@@ -53,8 +53,11 @@ export async function GET(request: Request) {
               status,
               estimated_minutes,
               actual_minutes,
+              notes,
+              priority,
               due_date,
               recurrence_rule,
+              recurrence_time,
               repeat_till,
               start_time,
               end_time
@@ -76,8 +79,11 @@ export async function GET(request: Request) {
     status: string;
     estimated_minutes: number | null;
     actual_minutes: number | null;
+    notes: string | null;
+    priority: string | null;
     due_date: string | null;
     recurrence_rule: string | null;
+    recurrence_time: string | null;
     repeat_till: string | null;
     start_time: string | null;
     end_time: string | null;
@@ -120,6 +126,62 @@ export async function GET(request: Request) {
     {}
   );
 
+  const taskIds = tasksByPlan.map((task) => task.id);
+  const attachmentsByTask = new Map<string, Array<{ id: string; url: string }>>();
+  const subtasksByTask = new Map<
+    string,
+    Array<{
+      id: string;
+      title: string;
+      completed: number;
+      estimated_minutes: number | null;
+      actual_minutes: number | null;
+      start_time: string | null;
+      end_time: string | null;
+    }>
+  >();
+  if (taskIds.length > 0) {
+    const placeholders = taskIds.map(() => "?").join(",");
+    const attachments = db
+      .prepare(
+        `SELECT id, task_id, url FROM task_attachments WHERE task_id IN (${placeholders}) ORDER BY created_at DESC`
+      )
+      .all(...taskIds) as Array<{ id: string; task_id: string; url: string }>;
+    attachments.forEach((attachment) => {
+      const list = attachmentsByTask.get(attachment.task_id) ?? [];
+      list.push({ id: attachment.id, url: attachment.url });
+      attachmentsByTask.set(attachment.task_id, list);
+    });
+
+    const subtasks = db
+      .prepare(
+        `SELECT id, task_id, title, completed, estimated_minutes, actual_minutes, start_time, end_time FROM task_subtasks WHERE task_id IN (${placeholders}) ORDER BY created_at ASC`
+      )
+      .all(...taskIds) as Array<{
+        id: string;
+        task_id: string;
+        title: string;
+        completed: number;
+        estimated_minutes: number | null;
+        actual_minutes: number | null;
+        start_time: string | null;
+        end_time: string | null;
+      }>;
+    subtasks.forEach((subtask) => {
+      const list = subtasksByTask.get(subtask.task_id) ?? [];
+      list.push({
+        id: subtask.id,
+        title: subtask.title,
+        completed: subtask.completed,
+        estimated_minutes: subtask.estimated_minutes,
+        actual_minutes: subtask.actual_minutes,
+        start_time: subtask.start_time,
+        end_time: subtask.end_time,
+      });
+      subtasksByTask.set(subtask.task_id, list);
+    });
+  }
+
   const commentsMap = commentsByPlan.reduce<
     Record<string, typeof commentsByPlan>
   >((acc, comment) => {
@@ -130,7 +192,11 @@ export async function GET(request: Request) {
 
   const enrichedPlans = plans.map((plan) => ({
     ...plan,
-    tasks: tasksMap[plan.id] ?? [],
+    tasks: (tasksMap[plan.id] ?? []).map((task) => ({
+      ...task,
+      attachments: attachmentsByTask.get(task.id) ?? [],
+      subtasks: subtasksByTask.get(task.id) ?? [],
+    })),
     comments: commentsMap[plan.id] ?? [],
   }));
 
