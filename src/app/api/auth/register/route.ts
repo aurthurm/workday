@@ -9,28 +9,56 @@ import {
 } from "@/lib/data";
 import { db } from "@/lib/db";
 import { setSession, setWorkspaceCookie } from "@/lib/auth";
+import { parseJson, emailSchema, nameSchema, passwordSchema } from "@/lib/validation";
+import { z } from "zod";
+import { rateLimit } from "@/lib/rate-limit";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function POST(request: Request) {
-  const body = (await request.json()) as {
-    email?: string;
-    password?: string;
-    name?: string;
-    workspaceName?: string;
-  };
-
-  const email = body.email?.trim().toLowerCase();
-  const name = body.name?.trim();
-  const password = body.password?.trim();
-
-  if (!email || !name || !password) {
+  const ip = getClientIp(request);
+  const limiter = rateLimit(`register:${ip ?? "unknown"}`, {
+    windowMs: 10 * 60 * 1000,
+    max: 5,
+  });
+  if (!limiter.allowed) {
+    logEvent({
+      level: "warn",
+      event: "auth.register.rate_limited",
+      message: "Registration rate limit exceeded.",
+      ip,
+    });
     return NextResponse.json(
-      { error: "Missing required fields." },
-      { status: 400 }
+      { error: "Too many attempts. Please try again later." },
+      { status: 429 }
     );
   }
 
+  const parsed = await parseJson(
+    request,
+    z.object({
+      email: emailSchema,
+      password: passwordSchema,
+      name: nameSchema,
+      workspaceName: z.string().trim().max(80).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+
+  const email = parsed.data.email.toLowerCase();
+  const name = parsed.data.name;
+  const password = parsed.data.password;
+
   const existing = getUserByEmail(email);
   if (existing) {
+    logEvent({
+      level: "warn",
+      event: "auth.register.duplicate",
+      message: "Attempt to register existing email.",
+      ip,
+      meta: { email },
+    });
     return NextResponse.json(
       { error: "An account with that email already exists." },
       { status: 409 }
@@ -41,7 +69,7 @@ export async function POST(request: Request) {
   const userId = createUser({ email, name, passwordHash });
 
   const workspaceId = createWorkspace({
-    name: body.workspaceName?.trim() || `${name}'s Workspace`,
+    name: parsed.data.workspaceName || `${name}'s Workspace`,
     type: "personal",
   });
   createMembership({ userId, workspaceId, role: "admin" });
@@ -65,6 +93,13 @@ export async function POST(request: Request) {
 
   await setSession({ userId, email, name });
   await setWorkspaceCookie(workspaceId);
+
+  logEvent({
+    event: "auth.register.success",
+    message: "User registered.",
+    userId,
+    ip,
+  });
 
   return NextResponse.json({
     user: { id: userId, email, name },

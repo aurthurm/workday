@@ -2,6 +2,20 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getMembershipForUser } from "@/lib/data";
+import {
+  parseJson,
+  categorySchema,
+  dateSchema,
+  notesSchema,
+  prioritySchema,
+  recurrenceSchema,
+  statusSchema,
+  timeSchema,
+  titleSchema,
+  uuidSchema,
+} from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -21,13 +35,20 @@ export async function PUT(
         tasks.id,
         tasks.daily_plan_id,
         COALESCE(tasks.user_id, daily_plans.user_id) as user_id,
-        COALESCE(tasks.workspace_id, daily_plans.workspace_id) as workspace_id
+        COALESCE(tasks.workspace_id, daily_plans.workspace_id) as workspace_id,
+        tasks.status as status
        FROM tasks
        LEFT JOIN daily_plans ON daily_plans.id = tasks.daily_plan_id
        WHERE tasks.id = ?`
     )
     .get(id) as
-    | { id: string; daily_plan_id: string | null; user_id: string; workspace_id: string }
+    | {
+        id: string;
+        daily_plan_id: string | null;
+        user_id: string;
+        workspace_id: string;
+        status: string;
+      }
     | undefined;
 
   if (!task) {
@@ -36,26 +57,51 @@ export async function PUT(
 
   const membership = getMembershipForUser(session.userId, task.workspace_id);
   if (!membership || task.user_id !== session.userId) {
+    logEvent({
+      level: "warn",
+      event: "auth.forbidden",
+      message: "Task update forbidden.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { taskId: id },
+    });
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
-
-  const body = (await request.json()) as {
-    title?: string;
-    category?: string;
-    estimatedMinutes?: number | null;
-    actualMinutes?: number | null;
-    status?: "planned" | "done" | "skipped" | "cancelled" | "unplanned";
-    notes?: string | null;
-    position?: number;
-    startTime?: string | null;
-    dailyPlanId?: string;
-    priority?: "high" | "medium" | "low" | "none";
-    dueDate?: string | null;
-    repeatTill?: string | null;
-    recurrenceRule?: string | null;
-    recurrenceTime?: string | null;
-    recurrenceAction?: "stop" | "delete_all";
-  };
+  const parsed = await parseJson(
+    request,
+    z.object({
+      title: titleSchema.optional(),
+      category: categorySchema.optional(),
+      estimatedMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+      actualMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+      status: statusSchema.optional(),
+      notes: notesSchema.nullable().optional(),
+      position: z.number().int().min(0).optional(),
+      startTime: timeSchema.nullable().optional(),
+      dailyPlanId: uuidSchema.optional(),
+      priority: prioritySchema.optional(),
+      dueDate: dateSchema.nullable().optional(),
+      repeatTill: dateSchema.nullable().optional(),
+      recurrenceRule: recurrenceSchema.nullable().optional(),
+      recurrenceTime: timeSchema.nullable().optional(),
+      recurrenceAction: z.enum(["stop", "delete_all"]).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const body = parsed.data;
+  const isLockedTask = ["done", "cancelled", "skipped"].includes(task.status);
+  if (isLockedTask) {
+    const isReinstate =
+      typeof body.status === "string" && body.status === "planned";
+    if (!isReinstate) {
+      return NextResponse.json(
+        { error: "Completed tasks cannot be edited." },
+        { status: 409 }
+      );
+    }
+  }
 
   let targetPlanId: string | null = null;
   let targetPlanUserId: string | null = null;
@@ -95,6 +141,13 @@ export async function PUT(
       now(),
       id
     );
+    logEvent({
+      event: "tasks.moved",
+      message: "Task moved to plan.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { taskId: id, dailyPlanId: targetPlanId },
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -127,12 +180,26 @@ export async function PUT(
       db.prepare(
         "UPDATE tasks SET recurrence_active = 0, repeat_till = ? WHERE id = ?"
       ).run(cancelDate, templateId);
+      logEvent({
+        event: "tasks.recurrence.stopped",
+        message: "Task recurrence stopped.",
+        userId: session.userId,
+        ip: getClientIp(request),
+        meta: { taskId: templateId, cancelDate },
+      });
       return NextResponse.json({ ok: true });
     }
     if (body.recurrenceAction === "delete_all") {
       db.prepare(
         "DELETE FROM tasks WHERE id = ? OR recurrence_parent_id = ?"
       ).run(templateId, templateId);
+      logEvent({
+        event: "tasks.recurrence.deleted",
+        message: "Task recurrence deleted.",
+        userId: session.userId,
+        ip: getClientIp(request),
+        meta: { taskId: templateId },
+      });
       return NextResponse.json({ ok: true });
     }
   }
@@ -152,6 +219,13 @@ export async function PUT(
     db.prepare(
       "UPDATE tasks SET repeat_till = ? WHERE recurrence_parent_id = ?"
     ).run(body.repeatTill, templateId);
+    logEvent({
+      event: "tasks.recurrence.repeat_till",
+      message: "Repeat till updated.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { taskId: templateId, repeatTill: body.repeatTill },
+    });
     return NextResponse.json({ ok: true });
   }
   if (
@@ -164,6 +238,13 @@ export async function PUT(
     db.prepare(
       "UPDATE tasks SET recurrence_rule = NULL, recurrence_time = NULL, recurrence_active = 0, repeat_till = NULL WHERE recurrence_parent_id = ?"
     ).run(templateId);
+    logEvent({
+      event: "tasks.recurrence.cleared",
+      message: "Task recurrence cleared.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { taskId: templateId },
+    });
     return NextResponse.json({ ok: true });
   }
 
@@ -280,6 +361,14 @@ export async function PUT(
     );
   }
 
+  logEvent({
+    event: "tasks.updated",
+    message: "Task updated.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { taskId: id },
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -298,12 +387,15 @@ export async function DELETE(
       `SELECT
         tasks.id,
         COALESCE(tasks.user_id, daily_plans.user_id) as user_id,
-        COALESCE(tasks.workspace_id, daily_plans.workspace_id) as workspace_id
+        COALESCE(tasks.workspace_id, daily_plans.workspace_id) as workspace_id,
+        tasks.status as status
        FROM tasks
        LEFT JOIN daily_plans ON daily_plans.id = tasks.daily_plan_id
        WHERE tasks.id = ?`
     )
-    .get(id) as { id: string; user_id: string; workspace_id: string } | undefined;
+    .get(id) as
+    | { id: string; user_id: string; workspace_id: string; status: string }
+    | undefined;
 
   if (!task) {
     return NextResponse.json({ error: "Task not found." }, { status: 404 });
@@ -311,10 +403,32 @@ export async function DELETE(
 
   const membership = getMembershipForUser(session.userId, task.workspace_id);
   if (!membership || task.user_id !== session.userId) {
+    logEvent({
+      level: "warn",
+      event: "auth.forbidden",
+      message: "Task delete forbidden.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { taskId: id },
+    });
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+  if (["done", "cancelled", "skipped"].includes(task.status)) {
+    return NextResponse.json(
+      { error: "Completed tasks cannot be edited." },
+      { status: 409 }
+    );
   }
 
   db.prepare("DELETE FROM tasks WHERE id = ?").run(id);
+
+  logEvent({
+    event: "tasks.deleted",
+    message: "Task deleted.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { taskId: id },
+  });
 
   return NextResponse.json({ ok: true });
 }

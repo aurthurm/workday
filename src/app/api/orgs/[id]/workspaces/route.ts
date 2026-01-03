@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { createWorkspace, getOrgMembership } from "@/lib/data";
+import { parseJson, nameSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function GET(
   _request: Request,
@@ -50,14 +53,16 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json()) as { name?: string };
-  const name = body.name?.trim();
-  if (!name) {
-    return NextResponse.json(
-      { error: "Workspace name is required." },
-      { status: 400 }
-    );
+  const parsed = await parseJson(
+    request,
+    z.object({
+      name: nameSchema,
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const name = parsed.data.name;
 
   const workspaceId = createWorkspace({
     name,
@@ -86,6 +91,14 @@ export async function POST(
       category.color,
       new Date().toISOString()
     );
+  });
+
+  logEvent({
+    event: "orgs.workspaces.created",
+    message: "Organization workspace created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { orgId: id, workspaceId },
   });
 
   return NextResponse.json({ id: workspaceId, name });

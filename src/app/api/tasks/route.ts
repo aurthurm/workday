@@ -4,6 +4,20 @@ import { getSession } from "@/lib/auth";
 import { getActiveWorkspace, getMembershipForUser } from "@/lib/data";
 import { getWorkspaceCookie } from "@/lib/auth";
 import { randomUUID } from "crypto";
+import {
+  parseJson,
+  parseSearchParams,
+  categorySchema,
+  dateSchema,
+  notesSchema,
+  prioritySchema,
+  recurrenceSchema,
+  timeSchema,
+  titleSchema,
+  uuidSchema,
+} from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -13,27 +27,27 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    dailyPlanId?: string | null;
-    title?: string;
-    category?: string;
-    estimatedMinutes?: number;
-    startTime?: string;
-    notes?: string | null;
-    priority?: "high" | "medium" | "low" | "none";
-    dueDate?: string | null;
-    recurrenceRule?: string | null;
-    recurrenceTime?: string | null;
-    repeatTill?: string | null;
-    position?: number;
-  };
-
-  if (!body.title || !body.category) {
-    return NextResponse.json(
-      { error: "Missing required fields." },
-      { status: 400 }
-    );
+  const parsed = await parseJson(
+    request,
+    z.object({
+      dailyPlanId: uuidSchema.nullable().optional(),
+      title: titleSchema,
+      category: categorySchema,
+      estimatedMinutes: z.number().int().min(0).max(1440).optional(),
+      startTime: timeSchema.optional(),
+      notes: notesSchema.nullable().optional(),
+      priority: prioritySchema.optional(),
+      dueDate: dateSchema.nullable().optional(),
+      recurrenceRule: recurrenceSchema.nullable().optional(),
+      recurrenceTime: timeSchema.nullable().optional(),
+      repeatTill: dateSchema.nullable().optional(),
+      position: z.number().int().min(0).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const body = parsed.data;
 
   let planDate: { date: string } | undefined;
   let position = 0;
@@ -89,7 +103,7 @@ export async function POST(request: Request) {
   }
 
   const id = randomUUID();
-  const startTimeValue = body.startTime?.trim() || null;
+  const startTimeValue = body.startTime ?? null;
   let startTimeIso: string | null = null;
   let endTimeValue: string | null = null;
   if (startTimeValue && planDate?.date && body.estimatedMinutes) {
@@ -104,8 +118,8 @@ export async function POST(request: Request) {
     startTimeIso = startDate.toISOString();
   }
 
-  const recurrenceRule = body.recurrenceRule?.trim() || null;
-  const recurrenceTime = body.recurrenceTime?.trim() || null;
+  const recurrenceRule = body.recurrenceRule ?? null;
+  const recurrenceTime = body.recurrenceTime ?? null;
   const recurrenceStartDate = recurrenceRule && planDate?.date ? planDate.date : null;
 
   db.prepare(
@@ -134,6 +148,14 @@ export async function POST(request: Request) {
     now()
   );
 
+  logEvent({
+    event: "tasks.created",
+    message: "Task created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { taskId: id, dailyPlanId: body.dailyPlanId ?? null },
+  });
+
   return NextResponse.json({ id });
 }
 
@@ -144,9 +166,12 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const scope = searchParams.get("scope");
-  if (scope !== "unplanned") {
-    return NextResponse.json({ error: "Unsupported scope." }, { status: 400 });
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({ scope: z.literal("unplanned") })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());

@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getOrgMembership } from "@/lib/data";
+import { parseJson, emailSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -45,15 +48,18 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    email?: string;
-    role?: "owner" | "admin" | "supervisor" | "member";
-  };
-  const email = body.email?.trim().toLowerCase();
-  if (!email) {
-    return NextResponse.json({ error: "Email is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({
+      email: emailSchema,
+      role: z.enum(["owner", "admin", "supervisor", "member"]).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const role = body.role ?? "member";
+  const email = parsed.data.email.toLowerCase();
+  const role = parsed.data.role ?? "member";
 
   const token = randomUUID();
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -61,6 +67,14 @@ export async function POST(
   db.prepare(
     "INSERT INTO org_invites (id, org_id, email, role, token, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
   ).run(randomUUID(), id, email, role, token, expiresAt, now());
+
+  logEvent({
+    event: "orgs.invites.created",
+    message: "Organization invite created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { orgId: id, email, role },
+  });
 
   return NextResponse.json({ ok: true, token });
 }

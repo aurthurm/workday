@@ -3,6 +3,9 @@ import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getDefaultOrgWorkspace, getOrgMembership } from "@/lib/data";
 import { randomUUID } from "crypto";
+import { parseJson, uuidSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function GET(
   _request: Request,
@@ -50,18 +53,21 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    userId?: string;
-    role?: "owner" | "admin" | "supervisor" | "member";
-  };
-  if (!body.userId) {
-    return NextResponse.json({ error: "User id is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({
+      userId: uuidSchema,
+      role: z.enum(["owner", "admin", "supervisor", "member"]).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const role = body.role ?? "member";
+  const role = parsed.data.role ?? "member";
 
   db.prepare(
     "INSERT OR IGNORE INTO org_members (id, org_id, user_id, role, status, created_at) VALUES (?, ?, ?, ?, 'active', ?)"
-  ).run(randomUUID(), id, body.userId, role, new Date().toISOString());
+  ).run(randomUUID(), id, parsed.data.userId, role, new Date().toISOString());
 
   const defaultWorkspace = getDefaultOrgWorkspace(id);
   if (defaultWorkspace) {
@@ -69,12 +75,20 @@ export async function POST(
       "INSERT OR IGNORE INTO memberships (id, user_id, workspace_id, role, created_at) VALUES (?, ?, ?, ?, ?)"
     ).run(
       randomUUID(),
-      body.userId,
+      parsed.data.userId,
       defaultWorkspace.id,
       role === "owner" || role === "admin" ? "admin" : "member",
       new Date().toISOString()
     );
   }
+
+  logEvent({
+    event: "orgs.members.added",
+    message: "Organization member added.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { orgId: id, memberId: parsed.data.userId, role },
+  });
 
   return NextResponse.json({ ok: true });
 }

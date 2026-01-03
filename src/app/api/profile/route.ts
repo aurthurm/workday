@@ -3,6 +3,9 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import { getSession, setSession } from "@/lib/auth";
 import { getUserById, getUserByEmail, listMembershipsForUser } from "@/lib/data";
+import { parseJson, emailSchema, nameSchema, passwordSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function GET() {
   const session = await getSession();
@@ -33,12 +36,24 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    name?: string;
-    email?: string;
-    currentPassword?: string;
-    newPassword?: string;
-  };
+  const parsed = await parseJson(
+    request,
+    z
+      .object({
+        name: nameSchema.optional(),
+        email: emailSchema.optional(),
+        currentPassword: passwordSchema.optional(),
+        newPassword: passwordSchema.optional(),
+      })
+      .refine(
+        (data) => !data.newPassword || Boolean(data.currentPassword),
+        { message: "Current password is required." }
+      )
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const body = parsed.data;
 
   const user = db
     .prepare(
@@ -102,6 +117,13 @@ export async function PUT(request: Request) {
       name: updatedUser.name,
     });
   }
+
+  logEvent({
+    event: "profile.updated",
+    message: "Profile updated.",
+    userId: session.userId,
+    ip: getClientIp(request),
+  });
 
   return NextResponse.json({ ok: true });
 }

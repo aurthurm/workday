@@ -17,8 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatRelativeTime } from "@/lib/time";
-import { TaskDetailPanel } from "@/components/task-detail-panel";
-import { TaskListItem } from "@/components/task-list-item";
+import { TaskListDetailPanel } from "@/components/task-list-detail-panel";
 
 type PlanResponse = {
   plan: null | {
@@ -244,6 +243,15 @@ export default function TodayClient() {
     },
   });
 
+  const taskCommentMutation = useMutation({
+    mutationFn: (payload: { taskId: string; content: string }) =>
+      apiFetch<{ id: string }>("/api/comments", {
+        method: "POST",
+        body: { dailyPlanId: plan?.id, taskId: payload.taskId, content: payload.content },
+      }),
+    onSuccess: () => planQuery.refetch(),
+  });
+
   const summary = useMemo(() => {
     if (!plan) return null;
     const total = plan.tasks.length;
@@ -348,7 +356,10 @@ export default function TodayClient() {
             <p className="text-sm text-muted-foreground">
               There is no plan for this day yet.
             </p>
-            <Button onClick={() => createPlanMutation.mutate()}>
+            <Button
+              onClick={() => createPlanMutation.mutate()}
+              disabled={createPlanMutation.isPending}
+            >
               {dateValue === new Date().toISOString().slice(0, 10)
                 ? "Start today's plan"
                 : "Start future plan"}
@@ -370,196 +381,165 @@ export default function TodayClient() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex flex-wrap gap-3 rounded-2xl border border-border/70 bg-muted/50 p-3">
-                  <Input
-                    className="min-w-[180px] flex-1"
-                    placeholder="Add a task"
-                    value={newTask.title}
-                    onChange={(event) =>
-                      setNewTask((prev) => ({
-                        ...prev,
-                        title: event.target.value,
-                      }))
-                    }
-                  />
-                  <Select
-                    value={newTask.category}
-                    onValueChange={(value) =>
-                      setNewTask((prev) => ({ ...prev, category: value }))
-                    }
-                  >
-                    <SelectTrigger className="w-[140px] bg-card">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          <span className="flex items-center gap-2">
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: getCategoryColor(category) }}
-                            />
-                            {category}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    className="w-[140px]"
-                    placeholder="Est. mins"
-                    value={newTask.estimatedMinutes}
-                    onChange={(event) =>
-                      setNewTask((prev) => ({
-                        ...prev,
-                        estimatedMinutes: event.target.value,
-                      }))
-                    }
-                  />
-                  <Input
-                    type="time"
-                    className="w-[140px]"
-                    placeholder="Start"
-                    value={newTask.startTime}
-                    onChange={(event) =>
-                      setNewTask((prev) => ({
-                        ...prev,
-                        startTime: event.target.value,
-                      }))
-                    }
-                  />
-                  <Button
-                    onClick={() => addTaskMutation.mutate()}
-                    disabled={!newTask.title || addTaskMutation.isPending}
-                  >
-                    Add
-                  </Button>
+                  <div className="min-w-[180px] flex-1 space-y-1">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Task title
+                    </span>
+                    <Input
+                      placeholder="Add a task"
+                      value={newTask.title}
+                      onChange={(event) =>
+                        setNewTask((prev) => ({
+                          ...prev,
+                          title: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Category
+                    </span>
+                    <Select
+                      value={newTask.category}
+                      onValueChange={(value) =>
+                        setNewTask((prev) => ({ ...prev, category: value }))
+                      }
+                    >
+                      <SelectTrigger className="w-[140px] bg-card">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="h-2 w-2 rounded-full"
+                                style={{ backgroundColor: getCategoryColor(category) }}
+                              />
+                              {category}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Est. minutes
+                    </span>
+                    <Input
+                      type="number"
+                      className="w-[140px]"
+                      placeholder="Est. mins"
+                      value={newTask.estimatedMinutes}
+                      onChange={(event) =>
+                        setNewTask((prev) => ({
+                          ...prev,
+                          estimatedMinutes: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <span className="text-xs font-medium text-muted-foreground">
+                      Start time
+                    </span>
+                    <Input
+                      type="time"
+                      className="w-[140px]"
+                      placeholder="Start"
+                      value={newTask.startTime}
+                      onChange={(event) =>
+                        setNewTask((prev) => ({
+                          ...prev,
+                          startTime: event.target.value,
+                        }))
+                      }
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <Button
+                      onClick={() => addTaskMutation.mutate()}
+                      disabled={!newTask.title || addTaskMutation.isPending}
+                    >
+                      {addTaskMutation.isPending ? "Adding..." : "Add"}
+                    </Button>
+                  </div>
                 </div>
 
-                <div className="grid gap-4 lg:grid-cols-[0.6fr_1.4fr]">
-                  <div className="space-y-3">
-                    {plan.tasks.map((task) => (
-                      <TaskListItem
-                        key={task.id}
-                        task={task}
-                        day={plan.date}
-                        variant="list"
-                        isSelected={task.id === selectedTaskId}
-                        onSelect={() => setSelectedTaskId(task.id)}
-                        readOnly
-                        categories={categories}
-                        getCategoryColor={getCategoryColor}
-                        normalizeStatus={statusLabel}
-                        formatEstimated={formatEstimated}
-                        getStartTimeInput={(value) =>
-                          value
-                            ? new Date(value).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                                hour12: false,
-                              })
-                            : ""
-                        }
-                        onSaveTitle={async (taskId, _day, title) => {
-                          await apiFetch(`/api/tasks/${taskId}`, {
-                            method: "PUT",
-                            body: { title },
-                          });
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                        onSaveTime={async (taskId, _day, startTime, estimatedMinutes) => {
-                          await apiFetch(`/api/tasks/${taskId}`, {
-                            method: "PUT",
-                            body: {
-                              startTime: startTime || null,
-                              estimatedMinutes: estimatedMinutes
-                                ? Number(estimatedMinutes)
-                                : null,
-                            },
-                          });
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                        onSaveCategory={async (taskId, _day, category) => {
-                          await apiFetch(`/api/tasks/${taskId}`, {
-                            method: "PUT",
-                            body: { category },
-                          });
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                        onSaveRecurrence={async (taskId, _day, recurrenceRule) => {
-                          await apiFetch(`/api/tasks/${taskId}`, {
-                            method: "PUT",
-                            body: { recurrenceRule },
-                          });
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                        onSetRepeatTill={async (taskId, _day, repeatTill) => {
-                          await apiFetch(`/api/tasks/${taskId}`, {
-                            method: "PUT",
-                            body: { repeatTill },
-                          });
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                        onDeleteRepeat={async (taskId) => {
-                          await apiFetch(`/api/tasks/${taskId}`, {
-                            method: "PUT",
-                            body: { recurrenceRule: null, repeatTill: null },
-                          });
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                        onTaskUpdated={() => {
-                          planQuery.refetch();
-                          emitTimelineUpdate();
-                        }}
-                      />
-                    ))}
-                    {plan.tasks.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        No tasks yet for this day.
-                      </p>
-                    )}
-                  </div>
-                  <div className="rounded-2xl border border-border/70 bg-card/90 p-4">
-                    {plan.tasks.length === 0 && (
-                      <p className="text-sm text-muted-foreground">
-                        Select a task to edit details.
-                      </p>
-                    )}
-                    {plan.tasks.length > 0 && (
-                      (() => {
-                        const activeTask =
-                          plan.tasks.find((task) => task.id === selectedTaskId) ??
-                          plan.tasks[0];
-                        return (
-                          <TaskDetailPanel
-                            key={activeTask.id}
-                            task={activeTask}
-                            categories={categories}
-                            getCategoryColor={getCategoryColor}
-                            statusLabel={statusLabel}
-                            statuses={statuses}
-                            priorities={priorities}
-                            comments={plan.comments}
-                            onUpdated={() => {
-                              planQuery.refetch();
-                              emitTimelineUpdate();
-                            }}
-                            onDeleted={() => {
-                              planQuery.refetch();
-                              emitTimelineUpdate();
-                            }}
-                          />
-                        );
-                      })()
-                    )}
-                  </div>
-                </div>
+                <TaskListDetailPanel
+                  tasks={plan.tasks}
+                  date={plan.date}
+                  comments={plan.comments}
+                  categories={categories}
+                  getCategoryColor={getCategoryColor}
+                  statusLabel={statusLabel}
+                  statuses={statuses}
+                  priorities={priorities}
+                  selectedTaskId={selectedTaskId}
+                  onSelectTaskId={setSelectedTaskId}
+                  listReadOnly
+                  detailReadOnly={false}
+                  onSaveTitle={async (taskId, _day, title) => {
+                    await apiFetch(`/api/tasks/${taskId}`, {
+                      method: "PUT",
+                      body: { title },
+                    });
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                  onSaveTime={async (taskId, _day, startTime, estimatedMinutes) => {
+                    await apiFetch(`/api/tasks/${taskId}`, {
+                      method: "PUT",
+                      body: {
+                        startTime: startTime || null,
+                        estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+                      },
+                    });
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                  onSaveCategory={async (taskId, _day, category) => {
+                    await apiFetch(`/api/tasks/${taskId}`, {
+                      method: "PUT",
+                      body: { category },
+                    });
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                  onSaveRecurrence={async (taskId, _day, recurrenceRule) => {
+                    await apiFetch(`/api/tasks/${taskId}`, {
+                      method: "PUT",
+                      body: { recurrenceRule },
+                    });
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                  onSetRepeatTill={async (taskId, _day, repeatTill) => {
+                    await apiFetch(`/api/tasks/${taskId}`, {
+                      method: "PUT",
+                      body: { repeatTill },
+                    });
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                  onDeleteRepeat={async (taskId) => {
+                    await apiFetch(`/api/tasks/${taskId}`, {
+                      method: "PUT",
+                      body: { recurrenceRule: null, repeatTill: null },
+                    });
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                  onAddComment={(taskId, content) =>
+                    taskCommentMutation.mutate({ taskId, content })
+                  }
+                  onUpdated={() => {
+                    planQuery.refetch();
+                    emitTimelineUpdate();
+                  }}
+                />
               </CardContent>
             </Card>
 
@@ -596,9 +576,9 @@ export default function TodayClient() {
               />
               <Button
                 onClick={() => commentMutation.mutate()}
-                disabled={!comment.trim()}
+                disabled={!comment.trim() || commentMutation.isPending}
               >
-                Add comment
+                {commentMutation.isPending ? "Saving..." : "Add comment"}
               </Button>
             </CardContent>
           </Card>

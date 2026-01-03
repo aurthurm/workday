@@ -8,6 +8,9 @@ import {
 import { getSession, getWorkspaceCookie, setWorkspaceCookie } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { randomUUID } from "crypto";
+import { parseJson, nameSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function GET() {
   const session = await getSession();
@@ -37,20 +40,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    name?: string;
-    type?: "personal" | "organization";
-  };
-
-  const name = body.name?.trim();
-  if (!name) {
-    return NextResponse.json(
-      { error: "Workspace name is required." },
-      { status: 400 }
-    );
+  const parsed = await parseJson(
+    request,
+    z.object({
+      name: nameSchema,
+      type: z.enum(["personal", "organization"]).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-
-  const type = body.type ?? "organization";
+  const name = parsed.data.name;
+  const type = parsed.data.type ?? "organization";
   if (type !== "personal") {
     const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
     if (!active || active.membership.role !== "admin") {
@@ -84,6 +85,14 @@ export async function POST(request: Request) {
     );
   });
   await setWorkspaceCookie(workspaceId);
+
+  logEvent({
+    event: "workspaces.created",
+    message: "Workspace created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { workspaceId, type },
+  });
 
   return NextResponse.json({ id: workspaceId, name, type });
 }

@@ -8,6 +8,9 @@ import {
   createWorkspace,
   listOrganizationsForUser,
 } from "@/lib/data";
+import { parseJson, nameSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const slugify = (value: string) =>
   value
@@ -31,12 +34,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as { name?: string; slug?: string };
-  const name = body.name?.trim();
-  if (!name) {
-    return NextResponse.json({ error: "Organization name is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({
+      name: nameSchema,
+      slug: z.string().trim().max(80).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
-  const slug = slugify(body.slug?.trim() || name);
+  const name = parsed.data.name;
+  const slug = slugify(parsed.data.slug || name);
   if (!slug) {
     return NextResponse.json({ error: "Organization slug is required." }, { status: 400 });
   }
@@ -81,6 +90,14 @@ export async function POST(request: Request) {
       category.color,
       new Date().toISOString()
     );
+  });
+
+  logEvent({
+    event: "orgs.created",
+    message: "Organization created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { orgId, workspaceId },
   });
 
   return NextResponse.json({ id: orgId, name, slug, defaultWorkspaceId: workspaceId });

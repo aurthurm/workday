@@ -69,6 +69,7 @@ export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
             variant="ghost"
             onClick={() => setCollapsed((prev) => !prev)}
             className="h-9 w-9 rounded-xl border border-border/70 bg-card/60 shadow-sm"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {collapsed ? (
               <PanelLeftOpen className="h-4 w-4" />
@@ -88,6 +89,7 @@ export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
             <button
               onClick={() => setWorkspaceSwitcherOpen((prev) => !prev)}
               className="flex w-full items-center justify-between rounded-xl px-3 py-2 text-left hover:bg-muted/60 transition"
+              aria-label="Switch workspace"
             >
               <div className="min-w-0 flex-1">
                 <h1 className="text-lg font-display font-semibold text-foreground truncate">
@@ -102,6 +104,7 @@ export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
             <button
               onClick={() => setWorkspaceSwitcherOpen((prev) => !prev)}
               className="flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-muted/60 text-sm font-semibold text-foreground hover:bg-muted transition"
+              aria-label="Switch workspace"
             >
               {workspaceName.slice(0, 1).toUpperCase()}
             </button>

@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatRelativeTime } from "@/lib/time";
+import { TaskListDetailPanel } from "@/components/task-list-detail-panel";
 import { TaskListItem } from "@/components/task-list-item";
 import { TaskDetailPanel } from "@/components/task-detail-panel";
 
@@ -273,99 +274,40 @@ export default function SupervisorPage() {
               <span>Visibility: {activePlan.visibility}</span>
               <span>Submitted: {activePlan.submitted ? "Yes" : "No"}</span>
             </div>
-            <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-              <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/60 p-4">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border/70 bg-muted/60 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                   Tasks for the day
                 </p>
-                <div className="space-y-2">
-                  {activePlan.tasks.map((task) => (
-                    <TaskListItem
-                      key={task.id}
-                      task={task}
-                      day={activePlan.date}
-                      variant="list"
-                      isSelected={task.id === activeTask?.id}
-                      onSelect={() => setSelectedTaskId(task.id)}
-                      readOnly
-                      categories={categoryList.map((category) => category.name)}
-                      getCategoryColor={getCategoryColor}
-                      normalizeStatus={statusLabel}
-                      formatEstimated={(minutes) => {
-                        if (!minutes || minutes <= 0) return "0.00";
-                        const hours = Math.floor(minutes / 60);
-                        const mins = minutes % 60;
-                        return `${hours}.${String(mins).padStart(2, "0")}`;
-                      }}
-                      getStartTimeInput={(value) =>
-                        value
-                          ? new Date(value).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                              hour12: false,
-                            })
-                          : ""
-                      }
-                      onSaveTitle={async () => {}}
-                      onSaveTime={async () => {}}
-                      onSaveCategory={async () => {}}
-                      onSaveRecurrence={async () => {}}
-                    />
-                  ))}
+                <div className="mt-3">
+                  <TaskListDetailPanel
+                    tasks={activePlan.tasks}
+                    date={activePlan.date}
+                    comments={activePlan.comments}
+                    categories={categoryList.map((category) => category.name)}
+                    getCategoryColor={getCategoryColor}
+                    statusLabel={statusLabel}
+                    statuses={statuses}
+                    priorities={priorities}
+                    selectedTaskId={activeTask?.id ?? null}
+                    onSelectTaskId={setSelectedTaskId}
+                    listReadOnly
+                    detailReadOnly
+                    onSaveTitle={async () => {}}
+                    onSaveTime={async () => {}}
+                    onSaveCategory={async () => {}}
+                    onSaveRecurrence={async () => {}}
+                    onSetRepeatTill={async () => {}}
+                    onDeleteRepeat={async () => {}}
+                    onAddComment={(taskId, content) => {
+                      commentMutation.mutate({
+                        planId: activePlan.id,
+                        taskId,
+                        content,
+                      });
+                    }}
+                  />
                 </div>
-              </div>
-              <div className="space-y-3 rounded-2xl border border-border/70 bg-card p-4">
-                {activeTask ? (
-                  <div className="space-y-3">
-                    <TaskDetailPanel
-                      key={activeTask.id}
-                      task={activeTask}
-                      categories={categoryList.map((category) => category.name)}
-                      getCategoryColor={getCategoryColor}
-                      statusLabel={statusLabel}
-                      statuses={statuses}
-                      priorities={priorities}
-                      comments={activePlan.comments}
-                      readOnly
-                      onUpdated={() => {}}
-                      onDeleted={() => {}}
-                    />
-                    <Textarea
-                      value={commentDrafts[activeTask.id] ?? ""}
-                      onChange={(event) =>
-                        setCommentDrafts((prev) => ({
-                          ...prev,
-                          [activeTask.id]: event.target.value,
-                        }))
-                      }
-                      placeholder="Leave a task-specific comment."
-                    />
-                    <div className="flex justify-end">
-                      <Button
-                        size="sm"
-                        onClick={() => {
-                          const content = commentDrafts[activeTask.id];
-                          if (!content?.trim()) return;
-                          commentMutation.mutate({
-                            planId: activePlan.id,
-                            taskId: activeTask.id,
-                            content,
-                          });
-                          setCommentDrafts((prev) => ({
-                            ...prev,
-                            [activeTask.id]: "",
-                          }));
-                        }}
-                      >
-                        Comment on task
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    No tasks for this plan.
-                  </p>
-                )}
               </div>
             </div>
             <div className="space-y-2">

@@ -12,9 +12,11 @@ export type Session = {
 const sessionCookie = "workday_session";
 const workspaceCookie = "workday_workspace";
 
-const secret = new TextEncoder().encode(
-  process.env.AUTH_SECRET || "workday-dev-secret"
-);
+const rawSecret = process.env.AUTH_SECRET;
+if (process.env.NODE_ENV === "production" && !rawSecret) {
+  throw new Error("AUTH_SECRET is required in production.");
+}
+const secret = new TextEncoder().encode(rawSecret || "workday-dev-secret");
 
 export async function createSessionToken(session: Session) {
   return new SignJWT(session)
@@ -34,7 +36,8 @@ export async function setSession(session: Session) {
   const cookieStore = await cookies();
   cookieStore.set(sessionCookie, token, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
@@ -44,7 +47,8 @@ export async function clearSession() {
   const cookieStore = await cookies();
   cookieStore.set(sessionCookie, "", {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 0,
   });
@@ -71,7 +75,8 @@ export async function setWorkspaceCookie(workspaceId: string) {
   const cookieStore = await cookies();
   cookieStore.set(workspaceCookie, workspaceId, {
     httpOnly: true,
-    sameSite: "lax",
+    sameSite: "strict",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 30,
   });

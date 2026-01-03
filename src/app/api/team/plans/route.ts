@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace } from "@/lib/data";
+import { parseSearchParams, dateSchema } from "@/lib/validation";
+import { z } from "zod";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -10,10 +12,16 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const date = searchParams.get("date");
-  if (!date) {
-    return NextResponse.json({ error: "Date is required." }, { status: 400 });
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({
+      date: dateSchema,
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const date = parsed.data.date;
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
   if (!active?.workspace) {

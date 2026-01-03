@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getMembershipForUser, getOrgMembership, getWorkspaceById } from "@/lib/data";
+import { parseJson, uuidSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -33,14 +36,14 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json()) as { transferWorkspaceId?: string };
-  const transferWorkspaceId = body.transferWorkspaceId?.trim();
-  if (!transferWorkspaceId) {
-    return NextResponse.json(
-      { error: "Transfer workspace is required." },
-      { status: 400 }
-    );
+  const parsed = await parseJson(
+    request,
+    z.object({ transferWorkspaceId: uuidSchema })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const transferWorkspaceId = parsed.data.transferWorkspaceId;
   if (transferWorkspaceId === id) {
     return NextResponse.json(
       { error: "Transfer workspace must be different." },
@@ -105,6 +108,14 @@ export async function POST(
     transferWorkspaceId,
     id
   );
+
+  logEvent({
+    event: "workspaces.transferred",
+    message: "Workspace data transferred.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { fromWorkspaceId: id, toWorkspaceId: transferWorkspaceId },
+  });
 
   return NextResponse.json({ ok: true });
 }

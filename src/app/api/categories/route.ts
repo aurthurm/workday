@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace } from "@/lib/data";
+import { parseJson, parseSearchParams, categorySchema, colorSchema, uuidSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function GET() {
   const session = await getSession();
@@ -39,20 +42,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json()) as { name?: string; color?: string };
-  const name = body.name?.trim();
-  const color = body.color?.trim() || "#64748b";
-  if (!name) {
-    return NextResponse.json(
-      { error: "Category name is required." },
-      { status: 400 }
-    );
+  const parsed = await parseJson(
+    request,
+    z.object({
+      name: categorySchema,
+      color: colorSchema.optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const name = parsed.data.name;
+  const color = parsed.data.color ?? "#64748b";
 
   const id = randomUUID();
   db.prepare(
     "INSERT INTO categories (id, workspace_id, name, color, created_at) VALUES (?, ?, ?, ?, ?)"
   ).run(id, active.workspace.id, name, color, new Date().toISOString());
+
+  logEvent({
+    event: "categories.created",
+    message: "Category created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { workspaceId: active.workspace.id, categoryId: id },
+  });
 
   return NextResponse.json({ id, name, color });
 }
@@ -73,10 +87,11 @@ export async function DELETE(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const id = searchParams.get("id");
-  if (!id) {
-    return NextResponse.json({ error: "Category id is required." }, { status: 400 });
+  const parsed = parseSearchParams(searchParams, z.object({ id: uuidSchema }));
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const id = parsed.data.id;
 
   const category = db
     .prepare("SELECT id, name FROM categories WHERE id = ? AND workspace_id = ?")
@@ -105,6 +120,14 @@ export async function DELETE(request: Request) {
     active.workspace.id
   );
 
+  logEvent({
+    event: "categories.deleted",
+    message: "Category deleted.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { workspaceId: active.workspace.id, categoryId: id },
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -123,15 +146,18 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json()) as {
-    id?: string;
-    name?: string;
-    color?: string;
-  };
-  const id = body.id?.trim();
-  if (!id) {
-    return NextResponse.json({ error: "Category id is required." }, { status: 400 });
+  const bodyParsed = await parseJson(
+    request,
+    z.object({
+      id: uuidSchema,
+      name: categorySchema.optional(),
+      color: colorSchema.optional(),
+    })
+  );
+  if (!bodyParsed.ok) {
+    return NextResponse.json({ error: bodyParsed.error }, { status: 400 });
   }
+  const id = bodyParsed.data.id;
 
   const existing = db
     .prepare(
@@ -144,8 +170,8 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Category not found." }, { status: 404 });
   }
 
-  const nextName = body.name?.trim() || existing.name;
-  const nextColor = body.color?.trim() || existing.color;
+  const nextName = bodyParsed.data.name ?? existing.name;
+  const nextColor = bodyParsed.data.color ?? existing.color;
 
   try {
     db.prepare(
@@ -168,6 +194,14 @@ export async function PUT(request: Request) {
        )`
     ).run(nextName, existing.name, active.workspace.id);
   }
+
+  logEvent({
+    event: "categories.updated",
+    message: "Category updated.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { workspaceId: active.workspace.id, categoryId: id },
+  });
 
   return NextResponse.json({ id, name: nextName, color: nextColor });
 }

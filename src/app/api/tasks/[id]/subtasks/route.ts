@@ -3,22 +3,30 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getMembershipForUser } from "@/lib/data";
+import { parseJson, parseSearchParams, timeSchema, titleSchema, uuidSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
-async function getTaskContext(taskId: string, userId: string) {
+async function getTaskContext(
+  taskId: string,
+  userId: string,
+  allowReadOnly = false
+) {
   const task = db
     .prepare(
       `SELECT
         tasks.id,
         COALESCE(tasks.user_id, daily_plans.user_id) as user_id,
-        COALESCE(tasks.workspace_id, daily_plans.workspace_id) as workspace_id
+        COALESCE(tasks.workspace_id, daily_plans.workspace_id) as workspace_id,
+        tasks.status as status
        FROM tasks
        LEFT JOIN daily_plans ON daily_plans.id = tasks.daily_plan_id
        WHERE tasks.id = ?`
     )
     .get(taskId) as
-    | { id: string; user_id: string; workspace_id: string }
+    | { id: string; user_id: string; workspace_id: string; status: string }
     | undefined;
   if (!task) {
     return { error: "Task not found.", status: 404 };
@@ -26,6 +34,9 @@ async function getTaskContext(taskId: string, userId: string) {
   const membership = getMembershipForUser(userId, task.workspace_id);
   if (!membership || task.user_id !== userId) {
     return { error: "Forbidden.", status: 403 };
+  }
+  if (!allowReadOnly && ["done", "cancelled", "skipped"].includes(task.status)) {
+    return { error: "Completed tasks cannot be edited.", status: 409 };
   }
   return { task };
 }
@@ -39,7 +50,7 @@ export async function GET(
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
   const { id } = await params;
-  const context = await getTaskContext(id, session.userId);
+  const context = await getTaskContext(id, session.userId, true);
   if ("error" in context) {
     return NextResponse.json({ error: context.error }, { status: context.status });
   }
@@ -67,19 +78,30 @@ export async function POST(
     return NextResponse.json({ error: context.error }, { status: context.status });
   }
 
-  const body = (await request.json()) as {
-    title?: string;
-    estimatedMinutes?: number | null;
-  };
-  const title = body.title?.trim();
-  if (!title) {
-    return NextResponse.json({ error: "Title is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({
+      title: titleSchema,
+      estimatedMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const title = parsed.data.title;
 
   const subtaskId = randomUUID();
   db.prepare(
     "INSERT INTO task_subtasks (id, task_id, title, completed, estimated_minutes, created_at) VALUES (?, ?, ?, 0, ?, ?)"
-  ).run(subtaskId, id, title, body.estimatedMinutes ?? null, now());
+  ).run(subtaskId, id, title, parsed.data.estimatedMinutes ?? null, now());
+
+  logEvent({
+    event: "subtasks.created",
+    message: "Subtask created.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { taskId: id, subtaskId },
+  });
 
   return NextResponse.json({ id: subtaskId, title });
 }
@@ -98,17 +120,21 @@ export async function PUT(
     return NextResponse.json({ error: context.error }, { status: context.status });
   }
 
-  const body = (await request.json()) as {
-    subtaskId?: string;
-    completed?: boolean;
-    title?: string;
-    estimatedMinutes?: number | null;
-    actualMinutes?: number | null;
-    startTime?: string | null;
-  };
-  if (!body.subtaskId) {
-    return NextResponse.json({ error: "Subtask id is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({
+      subtaskId: uuidSchema,
+      completed: z.boolean().optional(),
+      title: titleSchema.optional(),
+      estimatedMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+      actualMinutes: z.number().int().min(0).max(1440).nullable().optional(),
+      startTime: timeSchema.nullable().optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const body = parsed.data;
 
   const hasStartTimeUpdate = typeof body.startTime !== "undefined";
   let startTimeIso: string | null = null;
@@ -152,6 +178,14 @@ export async function PUT(
     id
   );
 
+  logEvent({
+    event: "subtasks.updated",
+    message: "Subtask updated.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { taskId: id, subtaskId: body.subtaskId },
+  });
+
   return NextResponse.json({ ok: true });
 }
 
@@ -170,15 +204,27 @@ export async function DELETE(
   }
 
   const { searchParams } = new URL(request.url);
-  const subtaskId = searchParams.get("subtaskId");
-  if (!subtaskId) {
-    return NextResponse.json({ error: "Subtask id is required." }, { status: 400 });
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({ subtaskId: uuidSchema })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const subtaskId = parsed.data.subtaskId;
 
   db.prepare("DELETE FROM task_subtasks WHERE id = ? AND task_id = ?").run(
     subtaskId,
     id
   );
+
+  logEvent({
+    event: "subtasks.deleted",
+    message: "Subtask deleted.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { taskId: id, subtaskId },
+  });
 
   return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { parseSearchParams } from "@/lib/validation";
+import { z } from "zod";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -9,7 +11,14 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const query = searchParams.get("query")?.trim().toLowerCase() ?? "";
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({ query: z.string().trim().min(1).max(80).optional() })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const query = parsed.data.query?.toLowerCase() ?? "";
   if (!query) {
     return NextResponse.json({ users: [] });
   }

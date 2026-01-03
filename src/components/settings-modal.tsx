@@ -822,7 +822,7 @@ export function SettingsModal({
                         !profileDraft.email.trim()
                       }
                     >
-                      Save account
+                      {updateProfileMutation.isPending ? "Saving..." : "Save account"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -891,7 +891,9 @@ export function SettingsModal({
                         !passwordDraft.next
                       }
                     >
-                      Update password
+                      {updatePasswordMutation.isPending
+                        ? "Updating..."
+                        : "Update password"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1039,8 +1041,9 @@ export function SettingsModal({
                         });
                         applyTheme(settingsDraft.appearance);
                       }}
+                      disabled={updateSettingsMutation.isPending}
                     >
-                      Save changes
+                      {updateSettingsMutation.isPending ? "Saving..." : "Save changes"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1083,7 +1086,7 @@ export function SettingsModal({
                           onClick={() => acceptInviteMutation.mutate(invite.token)}
                           disabled={acceptInviteMutation.isPending}
                         >
-                          Accept
+                          {acceptInviteMutation.isPending ? "Accepting..." : "Accept"}
                         </Button>
                       </div>
                     ))}
@@ -1109,9 +1112,9 @@ export function SettingsModal({
                       />
                       <Button
                         onClick={() => acceptInviteMutation.mutate(joinToken)}
-                        disabled={!joinToken.trim()}
+                        disabled={!joinToken.trim() || acceptInviteMutation.isPending}
                       >
-                        Accept
+                        {acceptInviteMutation.isPending ? "Accepting..." : "Accept"}
                       </Button>
                     </div>
                   </CardContent>
@@ -1157,6 +1160,11 @@ export function SettingsModal({
                             <Button
                               size="icon"
                               variant="ghost"
+                              disabled={
+                                deleteWorkspaceMutation.isPending ||
+                                transferWorkspaceMutation.isPending
+                              }
+                              aria-label="Transfer workspace data"
                               onClick={async () => {
                                 if (transferOptions.length === 0) {
                                   await Swal.fire({
@@ -1220,6 +1228,11 @@ export function SettingsModal({
                             <Button
                               size="icon"
                               variant="ghost"
+                              disabled={
+                                deleteWorkspaceMutation.isPending ||
+                                transferWorkspaceMutation.isPending
+                              }
+                              aria-label="Delete workspace"
                               onClick={async () => {
                                 const result = await Swal.fire({
                                   title: "Delete workspace?",
@@ -1257,9 +1270,14 @@ export function SettingsModal({
                       />
                       <Button
                         onClick={() => createPersonalWorkspaceMutation.mutate()}
-                        disabled={!personalWorkspaceDraft.trim()}
+                        disabled={
+                          !personalWorkspaceDraft.trim() ||
+                          createPersonalWorkspaceMutation.isPending
+                        }
                       >
-                        Add workspace
+                        {createPersonalWorkspaceMutation.isPending
+                          ? "Adding..."
+                          : "Add workspace"}
                       </Button>
                     </div>
                   </CardContent>
@@ -1295,7 +1313,12 @@ export function SettingsModal({
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  disabled={workspace.is_default === 1}
+                                  disabled={
+                                    workspace.is_default === 1 ||
+                                    deleteWorkspaceMutation.isPending ||
+                                    transferWorkspaceMutation.isPending
+                                  }
+                                  aria-label="Transfer workspace data"
                                   onClick={async () => {
                                     if (workspace.is_default === 1) return;
                                     if (transferOptions.length === 0) {
@@ -1360,7 +1383,12 @@ export function SettingsModal({
                                   <Button
                                     size="icon"
                                     variant="ghost"
-                                    disabled={workspace.is_default === 1}
+                                    disabled={
+                                      workspace.is_default === 1 ||
+                                      deleteWorkspaceMutation.isPending ||
+                                      transferWorkspaceMutation.isPending
+                                    }
+                                    aria-label="Delete workspace"
                                     onClick={async () => {
                                       if (workspace.is_default === 1) return;
                                       const result = await Swal.fire({
@@ -1413,9 +1441,13 @@ export function SettingsModal({
                                 }
                               )
                             }
-                            disabled={!draft.trim()}
+                            disabled={
+                              !draft.trim() || createOrgWorkspaceMutation.isPending
+                            }
                           >
-                            Add workspace
+                            {createOrgWorkspaceMutation.isPending
+                              ? "Adding..."
+                              : "Add workspace"}
                           </Button>
                         </div>
                       </CardContent>
@@ -1481,9 +1513,13 @@ export function SettingsModal({
                     </div>
                     <Button
                       onClick={() => createOrgMutation.mutate()}
-                      disabled={!orgDraft.name.trim()}
+                      disabled={
+                        !orgDraft.name.trim() || createOrgMutation.isPending
+                      }
                     >
-                      Create organization
+                      {createOrgMutation.isPending
+                        ? "Creating..."
+                        : "Create organization"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1627,6 +1663,8 @@ export function SettingsModal({
                                               userId: member.user_id,
                                             })
                                           }
+                                          disabled={removeWorkspaceMemberMutation.isPending}
+                                          aria-label="Remove workspace member"
                                         >
                                           <Trash2 className="h-4 w-4 text-destructive" />
                                         </Button>
@@ -1706,9 +1744,11 @@ export function SettingsModal({
                                           role: existingUserRole,
                                         })
                                       }
-                                      disabled={!selectedOrgId}
+                                      disabled={
+                                        !selectedOrgId || addMemberMutation.isPending
+                                      }
                                     >
-                                      Add
+                                      {addMemberMutation.isPending ? "Adding..." : "Add"}
                                     </Button>
                                   </div>
                                 ))}
@@ -1759,9 +1799,15 @@ export function SettingsModal({
                             </select>
                             <Button
                               onClick={() => inviteMutation.mutate()}
-                              disabled={!selectedOrgId || !inviteDraft.email.trim()}
+                              disabled={
+                                !selectedOrgId ||
+                                !inviteDraft.email.trim() ||
+                                inviteMutation.isPending
+                              }
                             >
-                              Send invite
+                              {inviteMutation.isPending
+                                ? "Sending..."
+                                : "Send invite"}
                             </Button>
                           </div>
                           <div className="mt-3 space-y-2">
@@ -1899,9 +1945,14 @@ export function SettingsModal({
                                                 color: editCategoryDraft.color,
                                               })
                                             }
-                                            disabled={!editCategoryDraft.name.trim()}
+                                            disabled={
+                                              !editCategoryDraft.name.trim() ||
+                                              updateCategoryMutation.isPending
+                                            }
                                           >
-                                            Save
+                                            {updateCategoryMutation.isPending
+                                              ? "Saving..."
+                                              : "Save"}
                                           </Button>
                                           <Button
                                             size="sm"
@@ -1943,8 +1994,11 @@ export function SettingsModal({
                                                 id: category.id,
                                               })
                                             }
+                                            disabled={deleteCategoryMutation.isPending}
                                           >
-                                            Delete
+                                            {deleteCategoryMutation.isPending
+                                              ? "Deleting..."
+                                              : "Delete"}
                                           </Button>
                                         </>
                                       )}
@@ -1998,9 +2052,14 @@ export function SettingsModal({
                                     color: draft.color,
                                   })
                                 }
-                                disabled={!draft.name.trim()}
+                                disabled={
+                                  !draft.name.trim() ||
+                                  createCategoryMutation.isPending
+                                }
                               >
-                                Add category
+                                {createCategoryMutation.isPending
+                                  ? "Adding..."
+                                  : "Add category"}
                               </Button>
                             </div>
                           )}
@@ -2109,9 +2168,14 @@ export function SettingsModal({
                                                 color: editCategoryDraft.color,
                                               })
                                             }
-                                            disabled={!editCategoryDraft.name.trim()}
+                                            disabled={
+                                              !editCategoryDraft.name.trim() ||
+                                              updateCategoryMutation.isPending
+                                            }
                                           >
-                                            Save
+                                            {updateCategoryMutation.isPending
+                                              ? "Saving..."
+                                              : "Save"}
                                           </Button>
                                           <Button
                                             size="sm"
@@ -2153,8 +2217,11 @@ export function SettingsModal({
                                                 id: category.id,
                                               })
                                             }
+                                            disabled={deleteCategoryMutation.isPending}
                                           >
-                                            Delete
+                                            {deleteCategoryMutation.isPending
+                                              ? "Deleting..."
+                                              : "Delete"}
                                           </Button>
                                         </>
                                       )}
@@ -2208,9 +2275,14 @@ export function SettingsModal({
                                     color: draft.color,
                                   })
                                 }
-                                disabled={!draft.name.trim()}
+                                disabled={
+                                  !draft.name.trim() ||
+                                  createCategoryMutation.isPending
+                                }
                               >
-                                Add category
+                                {createCategoryMutation.isPending
+                                  ? "Adding..."
+                                  : "Add category"}
                               </Button>
                             </div>
                           )}
@@ -2330,8 +2402,11 @@ export function SettingsModal({
                           aiPreferences: settingsDraft.aiPreferences,
                         })
                       }
+                      disabled={updateSettingsMutation.isPending}
                     >
-                      Save AI settings
+                      {updateSettingsMutation.isPending
+                        ? "Saving..."
+                        : "Save AI settings"}
                     </Button>
                   </CardContent>
                 </Card>
@@ -2382,8 +2457,11 @@ export function SettingsModal({
                           dueSoonDays: settingsDraft.dueSoonDays,
                         })
                       }
+                      disabled={updateSettingsMutation.isPending}
                     >
-                      Save due date settings
+                      {updateSettingsMutation.isPending
+                        ? "Saving..."
+                        : "Save due date settings"}
                     </Button>
                   </CardContent>
                 </Card>

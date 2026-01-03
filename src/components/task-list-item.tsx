@@ -131,7 +131,9 @@ export function TaskListItem({
     }
   }, [task.start_time, task.estimated_minutes, isEditingTime, getStartTimeInput]);
 
-  const canDrag = !readOnly && draggable && !isEditingTime;
+  const isLocked =
+    readOnly || ["done", "cancelled", "skipped"].includes(task.status);
+  const canDrag = !isLocked && draggable && !isEditingTime;
   const dueBadge = (() => {
     if (!task.due_date) return null;
     const due = new Date(task.due_date);
@@ -180,13 +182,13 @@ export function TaskListItem({
   }, [task.id, task.subtasks, task.repeat_till]);
 
   useEffect(() => {
-    if (!readOnly) return;
+    if (!isLocked) return;
     setIsEditingTime(false);
     setIsEditingCategory(false);
     setIsEditingRecurrence(false);
     setIsShowingSubtasks(false);
     setIsDetailOpen(false);
-  }, [readOnly]);
+  }, [isLocked]);
 
   useEffect(() => {
     if (!isShowingSubtasks || subtasksLoaded || isLoadingSubtasks) return;
@@ -320,7 +322,6 @@ export function TaskListItem({
           className="text-left text-sm font-medium text-foreground hover:underline"
           onClick={(event) => {
             event.stopPropagation();
-            if (readOnly) return;
             setIsDetailOpen(true);
           }}
         >
@@ -332,7 +333,7 @@ export function TaskListItem({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          {readOnly ? (
+          {isLocked ? (
             <span className="text-xs text-muted-foreground">
               ⌚ {formatEstimated(task.estimated_minutes)}
             </span>
@@ -343,6 +344,7 @@ export function TaskListItem({
                 className="text-xs text-muted-foreground hover:text-foreground"
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (isLocked) return;
                   setIsEditingTime((prev) => !prev);
                 }}
               >
@@ -353,6 +355,7 @@ export function TaskListItem({
                 className="inline-flex items-center text-muted-foreground hover:text-foreground"
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (isLocked) return;
                   setIsEditingRecurrence((prev) => !prev);
                 }}
                 aria-label="Edit recurring schedule"
@@ -364,6 +367,7 @@ export function TaskListItem({
                 className="inline-flex items-center text-muted-foreground hover:text-foreground"
                 onClick={(event) => {
                   event.stopPropagation();
+                  if (isLocked) return;
                   setIsShowingSubtasks((prev) => !prev);
                 }}
                 aria-label="Show subtasks"
@@ -412,7 +416,7 @@ export function TaskListItem({
             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={(event) => {
               event.stopPropagation();
-              if (readOnly) return;
+              if (isLocked) return;
               setIsEditingCategory(true);
             }}
           >
@@ -426,7 +430,7 @@ export function TaskListItem({
           </button>
         )}
       </div>
-      {isEditingTime && (
+      {isEditingTime && !isLocked && (
         <div className="mt-3 rounded-xl border border-border/70 bg-muted/60 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <Input
@@ -470,7 +474,7 @@ export function TaskListItem({
           </div>
         </div>
       )}
-      {isEditingRecurrence && (
+      {isEditingRecurrence && !isLocked && (
         <div className="mt-3 rounded-xl border border-border/70 bg-muted/60 p-3">
           <div className="flex flex-wrap items-center gap-2">
             <Select
@@ -531,7 +535,7 @@ export function TaskListItem({
           </div>
         </div>
       )}
-      {isShowingSubtasks && (
+      {isShowingSubtasks && !isLocked && (
         <div className="mt-3 rounded-xl border border-border/70 bg-muted/60 p-3">
           <div className="flex flex-wrap gap-2">
             <Input
@@ -575,6 +579,7 @@ export function TaskListItem({
                     onChange={(event) =>
                       handleSubtaskToggle(subtask.id, event.target.checked)
                     }
+                    disabled={isLocked}
                   />
                   {editingSubtaskId === subtask.id ? (
                     <Input
@@ -678,6 +683,7 @@ export function TaskListItem({
                       }
                       onClick={(event) => {
                         event.stopPropagation();
+                        if (isLocked) return;
                         setEditingSubtaskId(subtask.id);
                         setEditingSubtaskTitle(subtask.title);
                       }}
@@ -690,6 +696,7 @@ export function TaskListItem({
                   <button
                     className="inline-flex items-center text-muted-foreground hover:text-foreground"
                     onClick={() => {
+                      if (isLocked) return;
                       setEditingSubtaskTimeId((prev) =>
                         prev === subtask.id ? null : subtask.id
                       );
@@ -701,7 +708,10 @@ export function TaskListItem({
                   </button>
                   <button
                     className="text-muted-foreground hover:text-foreground"
-                    onClick={() => handleSubtaskDelete(subtask.id)}
+                    onClick={() => {
+                      if (isLocked) return;
+                      handleSubtaskDelete(subtask.id);
+                    }}
                     aria-label="Delete subtask"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

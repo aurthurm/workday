@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getMembershipForUser, getWorkspaceById } from "@/lib/data";
+import { parseJson, longTextSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -37,21 +40,38 @@ export async function PUT(
   const lockedVisibility =
     workspace.type === "personal" ? "private" : "team";
 
-  const body = (await request.json()) as {
-    visibility?: "team" | "private";
-    submitted?: boolean;
-    reviewed?: boolean;
-    reflection?: {
-      what_went_well?: string;
-      blockers?: string;
-      tomorrow_focus?: string;
-    };
-  };
+  const parsed = await parseJson(
+    request,
+    z.object({
+      visibility: z.enum(["team", "private"]).optional(),
+      submitted: z.boolean().optional(),
+      reviewed: z.boolean().optional(),
+      reflection: z
+        .object({
+          what_went_well: longTextSchema.optional(),
+          blockers: longTextSchema.optional(),
+          tomorrow_focus: longTextSchema.optional(),
+        })
+        .optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const body = parsed.data;
 
   const isOwner = plan.user_id === session.userId;
   const canReview = membership.role === "supervisor" || membership.role === "admin";
 
   if (!isOwner && !canReview) {
+    logEvent({
+      level: "warn",
+      event: "auth.forbidden",
+      message: "Plan update forbidden.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { planId: plan.id },
+    });
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
@@ -102,6 +122,14 @@ export async function PUT(
       "UPDATE daily_plans SET reviewed = ?, updated_at = ? WHERE id = ?"
     ).run(Number(body.reviewed), now(), plan.id);
   }
+
+  logEvent({
+    event: "plans.updated",
+    message: "Daily plan updated.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { planId: plan.id },
+  });
 
   return NextResponse.json({ ok: true });
 }

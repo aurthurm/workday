@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace } from "@/lib/data";
+import { parseSearchParams, dateSchema } from "@/lib/validation";
+import { z } from "zod";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -10,11 +12,28 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const limit = Number(searchParams.get("limit") ?? "14");
-  const filter = searchParams.get("filter") ?? "history";
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({
+      limit: z.coerce.number().int().min(1).max(100).optional(),
+      filter: z.enum(["history", "future", "all"]).optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const limit = parsed.data.limit ?? 21;
+  const filter = parsed.data.filter ?? "history";
   const today = new Date().toISOString().slice(0, 10);
-  const comparator =
-    filter === "future" ? ">=" : filter === "all" ? "!=" : "<=";
+  if (!dateSchema.safeParse(today).success) {
+    return NextResponse.json({ error: "Invalid date." }, { status: 400 });
+  }
+  const comparatorMap = {
+    future: ">=",
+    all: "!=",
+    history: "<=",
+  } as const;
+  const comparator = comparatorMap[filter];
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
   if (!active?.workspace) {

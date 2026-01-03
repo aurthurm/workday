@@ -4,6 +4,9 @@ import { getActiveWorkspace } from "@/lib/data";
 import { SidebarShell } from "@/components/sidebar-shell";
 import { RightRail } from "@/components/right-rail";
 import { ThemeSync } from "@/components/theme-sync";
+import { MobileHeader } from "@/components/mobile-header";
+import { MobileNav } from "@/components/mobile-nav";
+import { SkipLinks, LiveRegion } from "@/components/accessibility";
 
 export default async function AppLayout({
   children,
@@ -20,23 +23,41 @@ export default async function AppLayout({
   return (
     <div className="h-screen w-full overflow-hidden bg-background">
       <ThemeSync />
-      <div className="flex h-full w-full">
-        <SidebarShell
-          name={session.name}
-          workspaceName={active?.workspace?.name ?? "Workspace"}
-          role={active?.membership?.role ?? "member"}
-        />
+      <SkipLinks />
+      <LiveRegion />
 
-        <main className="flex min-w-0 flex-1 flex-col">
-          <div className="h-full overflow-auto p-6">
+      {/* Mobile Header - Only on mobile */}
+      <MobileHeader
+        name={session.name}
+        workspaceName={active?.workspace?.name ?? "Workspace"}
+        role={active?.membership?.role ?? "member"}
+      />
+
+      <div className="flex h-full w-full lg:h-full">
+        {/* Desktop Sidebar - Hidden on mobile */}
+        <aside id="navigation" aria-label="Main navigation">
+          <SidebarShell
+            name={session.name}
+            workspaceName={active?.workspace?.name ?? "Workspace"}
+            role={active?.membership?.role ?? "member"}
+          />
+        </aside>
+
+        {/* Main Content - With mobile padding for header and bottom nav */}
+        <main id="main-content" className="flex min-w-0 flex-1 flex-col lg:h-full">
+          <div className="h-full overflow-auto p-4 pb-20 lg:p-6 lg:pb-6">
             {children}
           </div>
         </main>
 
-        <div className="relative hidden lg:flex">
+        {/* Right Rail - Hidden on mobile and tablets */}
+        <aside className="relative hidden shrink-0 xl:flex" aria-label="Additional tools">
           <RightRail />
-        </div>
+        </aside>
       </div>
+
+      {/* Mobile Bottom Navigation - Only on mobile */}
+      <MobileNav />
     </div>
   );
 }

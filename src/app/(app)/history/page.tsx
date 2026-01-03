@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -16,9 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ChevronLeft, ChevronRight, RotateCcw, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, Plus, Calendar, ArrowDown } from "lucide-react";
 import { TaskListItem } from "@/components/task-list-item";
 import { TaskDetailPanel } from "@/components/task-detail-panel";
+import { EmptyState } from "@/components/empty-state";
+import { LoadingSpinner } from "@/components/loading-spinner";
 
 type HistoryResponse = {
   plans: Array<{
@@ -217,6 +219,8 @@ export default function HistoryPage() {
   const todayKey = useMemo(() => toDateKey(new Date()), []);
   const [view, setView] = useState<"listview" | "kanban">("listview");
   const [filter, setFilter] = useState<"history" | "future">("history");
+  const [page, setPage] = useState(1);
+  const pageSize = 21;
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [selectedKanbanDay, setSelectedKanbanDay] = useState<string | null>(null);
@@ -253,10 +257,28 @@ export default function HistoryPage() {
   const lastNextRef = useRef<string | null>(null);
   const initialLoadRef = useRef(false);
   const historyQuery = useQuery({
-    queryKey: ["history", filter],
+    queryKey: ["history", filter, page],
     queryFn: () =>
-      apiFetch<HistoryResponse>(`/api/history?limit=21&filter=${filter}`),
+      apiFetch<HistoryResponse>(
+        `/api/history?limit=${page * pageSize}&filter=${filter}`
+      ),
     enabled: view === "listview",
+  });
+  const commentMutation = useMutation({
+    mutationFn: async ({
+      taskId,
+      content,
+    }: {
+      taskId: string;
+      content: string;
+    }) =>
+      apiFetch("/api/comments", {
+        method: "POST",
+        body: { taskId, content },
+      }),
+    onSuccess: () => {
+      historyQuery.refetch();
+    },
   });
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -293,6 +315,7 @@ export default function HistoryPage() {
     categoryColors.get(name) ?? "#64748b";
 
   const plans = historyQuery.data?.plans ?? [];
+  const canLoadMore = view === "listview" && plans.length >= page * pageSize;
   const activePlan =
     plans.find((plan) => plan.id === selectedPlanId) ?? plans[0];
   const activeTask =
@@ -318,6 +341,10 @@ export default function HistoryPage() {
       );
     }
   }, [view, selectedKanbanDay]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filter, view]);
 
   const loadRange = async (start: string, end: string) => {
     try {
@@ -866,6 +893,7 @@ export default function HistoryPage() {
               size="sm"
               onClick={scrollKanbanLeft}
               className="flex items-center gap-2"
+              aria-label="Previous days"
             >
               <ChevronLeft className="h-4 w-4" />
               Previous
@@ -876,6 +904,7 @@ export default function HistoryPage() {
               onClick={resetKanbanView}
               className="flex items-center gap-2"
               title="Reset to today"
+              aria-label="Reset to today"
             >
               <RotateCcw className="h-4 w-4" />
               Today
@@ -885,6 +914,7 @@ export default function HistoryPage() {
               size="sm"
               onClick={scrollKanbanRight}
               className="flex items-center gap-2"
+              aria-label="Next days"
             >
               Next
               <ChevronRight className="h-4 w-4" />
@@ -910,12 +940,22 @@ export default function HistoryPage() {
         </div>
       </div>
 
-      {view === "listview" && plans.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          {filter === "history"
-            ? "You have no historical plans."
-            : "You have no future plans."}
-        </p>
+      {view === "listview" && plans.length === 0 && !historyQuery.isFetching && (
+        <EmptyState
+          icon={Calendar}
+          title={filter === "history" ? "No historical plans" : "No future plans"}
+          description={
+            filter === "history"
+              ? "Your past daily plans will appear here once you start creating them."
+              : "Plan ahead by creating plans for upcoming days."
+          }
+        />
+      )}
+
+      {view === "listview" && historyQuery.isFetching && plans.length === 0 && (
+        <div className="flex justify-center py-12">
+          <LoadingSpinner size="lg" text="Loading plans..." />
+        </div>
       )}
 
       {view === "listview" && plans.length > 0 && (
@@ -1046,11 +1086,55 @@ export default function HistoryPage() {
               statuses={statuses}
               priorities={priorities}
               comments={activePlan.comments}
+              onAddComment={(content) =>
+                commentMutation.mutate({ taskId: activeTask.id, content })
+              }
               onUpdated={() => historyQuery.refetch()}
               onDeleted={() => historyQuery.refetch()}
             />
           </div>
         )}
+        </div>
+      )}
+
+      {view === "listview" && plans.length > 0 && (
+        <div className="flex flex-col items-center gap-3">
+          {canLoadMore && (
+            <Button
+              variant="outline"
+              size="default"
+              onClick={() => {
+                setPage((prev) => prev + 1);
+                // Smooth scroll to show new content will be added
+                setTimeout(() => {
+                  window.scrollTo({
+                    top: document.documentElement.scrollHeight,
+                    behavior: "smooth",
+                  });
+                }, 100);
+              }}
+              disabled={historyQuery.isFetching}
+              aria-label="Load more plans"
+              className="min-w-[180px]"
+            >
+              {historyQuery.isFetching ? (
+                <div className="flex items-center gap-2">
+                  <LoadingSpinner size="sm" />
+                  <span>Loading...</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <ArrowDown className="h-4 w-4" />
+                  <span>Load more plans</span>
+                </div>
+              )}
+            </Button>
+          )}
+          {!canLoadMore && (
+            <p className="text-sm text-muted-foreground">
+              All {plans.length} plans loaded
+            </p>
+          )}
         </div>
       )}
 

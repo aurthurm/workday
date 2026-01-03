@@ -4,6 +4,9 @@ import { db } from "@/lib/db";
 import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace, upsertDailyPlan } from "@/lib/data";
 import { rolloverIncompleteTasks } from "@/lib/rollover";
+import { parseSearchParams, dateSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const isWeekday = (date: Date) => {
   const day = date.getDay();
@@ -87,10 +90,16 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const date = searchParams.get("date");
-  if (!date) {
-    return NextResponse.json({ error: "Date is required." }, { status: 400 });
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({
+      date: dateSchema,
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const date = parsed.data.date;
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
   if (!active?.workspace) {
@@ -174,6 +183,13 @@ export async function GET(request: Request) {
       workspaceId: active.workspace.id,
       date,
       visibility: defaultVisibility,
+    });
+    logEvent({
+      event: "plans.created",
+      message: "Daily plan created.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { planId, date },
     });
     plan = {
       id: planId,
@@ -266,6 +282,13 @@ export async function GET(request: Request) {
       new Date().toISOString(),
       new Date().toISOString()
     );
+    logEvent({
+      event: "tasks.recurrence.created",
+      message: "Recurring task created.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { taskId: id, planId: plan.id, templateId: template.id },
+    });
   });
 
   const tasks = db

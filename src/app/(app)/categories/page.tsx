@@ -148,9 +148,9 @@ export default function CategoriesPage() {
                                   color: editColor,
                                 })
                               }
-                              disabled={!editName.trim()}
+                              disabled={!editName.trim() || updateMutation.isPending}
                             >
-                              Save
+                              {updateMutation.isPending ? "Saving..." : "Save"}
                             </Button>
                             <Button
                               size="sm"
@@ -183,8 +183,9 @@ export default function CategoriesPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() => deleteMutation.mutate(category.id)}
+                              disabled={deleteMutation.isPending}
                             >
-                              Delete
+                              {deleteMutation.isPending ? "Deleting..." : "Delete"}
                             </Button>
                           </>
                         )}
@@ -217,7 +218,7 @@ export default function CategoriesPage() {
                 onClick={() => createMutation.mutate()}
                 disabled={!name.trim() || createMutation.isPending}
               >
-                Add category
+                {createMutation.isPending ? "Adding..." : "Add category"}
               </Button>
             </div>
           )}

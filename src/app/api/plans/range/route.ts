@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace, upsertDailyPlan } from "@/lib/data";
+import { parseSearchParams, dateSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -11,13 +14,19 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const start = searchParams.get("start");
-  const end = searchParams.get("end");
-  if (!start || !end) {
-    return NextResponse.json(
-      { error: "Start and end dates are required." },
-      { status: 400 }
-    );
+  const parsed = parseSearchParams(
+    searchParams,
+    z.object({
+      start: dateSchema,
+      end: dateSchema,
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const { start, end } = parsed.data;
+  if (end < start) {
+    return NextResponse.json({ error: "Invalid date range." }, { status: 400 });
   }
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
@@ -194,6 +203,13 @@ export async function GET(request: Request) {
         };
         planByDate.set(day, plan);
         plans.push(plan);
+        logEvent({
+          event: "plans.created",
+          message: "Daily plan created.",
+          userId: session.userId,
+          ip: getClientIp(request),
+          meta: { planId, date: day },
+        });
       }
 
       const existing = db
@@ -262,6 +278,13 @@ export async function GET(request: Request) {
         new Date().toISOString(),
         new Date().toISOString()
       );
+      logEvent({
+        event: "tasks.recurrence.created",
+        message: "Recurring task created.",
+        userId: session.userId,
+        ip: getClientIp(request),
+        meta: { taskId, planId: plan.id, templateId: template.id },
+      });
     }
   }
 

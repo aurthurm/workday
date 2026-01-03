@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { getMembershipForUser, getOrgMembership, getWorkspaceById } from "@/lib/data";
+import { uuidSchema } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -39,10 +42,17 @@ export async function DELETE(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as {
-    transferWorkspaceId?: string;
-  };
-  const transferWorkspaceId = body.transferWorkspaceId?.trim() || null;
+  const payload = await request.json().catch(() => ({}));
+  const parsed = z
+    .object({ transferWorkspaceId: uuidSchema.optional() })
+    .safeParse(payload);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Invalid request payload." },
+      { status: 400 }
+    );
+  }
+  const transferWorkspaceId = parsed.data.transferWorkspaceId ?? null;
 
   const planCount = db
     .prepare("SELECT COUNT(*) as count FROM daily_plans WHERE workspace_id = ?")
@@ -124,8 +134,22 @@ export async function DELETE(
       transferWorkspaceId,
       id
     );
+    logEvent({
+      event: "workspaces.transferred",
+      message: "Workspace data transferred.",
+      userId: session.userId,
+      ip: getClientIp(request),
+      meta: { fromWorkspaceId: id, toWorkspaceId: transferWorkspaceId },
+    });
   }
 
   db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
+  logEvent({
+    event: "workspaces.deleted",
+    message: "Workspace deleted.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { workspaceId: id },
+  });
   return NextResponse.json({ ok: true });
 }

@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { parseJson } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -53,16 +56,23 @@ export async function PUT(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    appearance?: "light" | "dark";
-    taskAddPosition?: "top" | "bottom";
-    defaultEstMinutes?: number;
-    dueSoonDays?: number;
-    aiConfirm?: boolean;
-    aiRoutine?: string | null;
-    aiWorkHours?: string | null;
-    aiPreferences?: string | null;
-  };
+  const parsed = await parseJson(
+    request,
+    z.object({
+      appearance: z.enum(["light", "dark"]).optional(),
+      taskAddPosition: z.enum(["top", "bottom"]).optional(),
+      defaultEstMinutes: z.number().int().min(0).max(180).optional(),
+      dueSoonDays: z.number().int().min(0).max(30).optional(),
+      aiConfirm: z.boolean().optional(),
+      aiRoutine: z.string().trim().max(2000).nullable().optional(),
+      aiWorkHours: z.string().trim().max(500).nullable().optional(),
+      aiPreferences: z.string().trim().max(2000).nullable().optional(),
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
+  }
+  const body = parsed.data;
 
   db.prepare(
     `INSERT INTO user_settings (
@@ -110,6 +120,13 @@ export async function PUT(request: Request) {
     body.aiPreferences ?? null,
     now()
   );
+
+  logEvent({
+    event: "settings.updated",
+    message: "User settings updated.",
+    userId: session.userId,
+    ip: getClientIp(request),
+  });
 
   return NextResponse.json({ ok: true });
 }

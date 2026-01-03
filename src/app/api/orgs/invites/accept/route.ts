@@ -3,6 +3,9 @@ import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import { addOrgMember, getDefaultOrgWorkspace } from "@/lib/data";
+import { parseJson } from "@/lib/validation";
+import { z } from "zod";
+import { getClientIp, logEvent } from "@/lib/logger";
 
 const now = () => new Date().toISOString();
 
@@ -12,11 +15,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as { token?: string };
-  const token = body.token?.trim();
-  if (!token) {
-    return NextResponse.json({ error: "Invite token is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({ token: z.string().trim().min(1).max(120) })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const token = parsed.data.token;
 
   const invite = db
     .prepare(
@@ -73,6 +79,14 @@ export async function POST(request: Request) {
     now(),
     invite.id
   );
+
+  logEvent({
+    event: "orgs.invites.accepted",
+    message: "Organization invite accepted.",
+    userId: session.userId,
+    ip: getClientIp(request),
+    meta: { orgId: invite.org_id, inviteId: invite.id },
+  });
 
   return NextResponse.json({ ok: true });
 }
