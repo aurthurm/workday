@@ -1,163 +1,188 @@
-Workday is a lightweight daily planning and visibility app for teams.
+# Workday
 
-## Features
+Workday is a daily planning and visibility platform for individuals and teams. It combines focused daily plans, supervisor visibility, comments, and a clear workflow for planning, execution, and review.
 
-- **Daily Planning**: Plan tasks with time estimates and scheduling
-- **Team Visibility**: Supervisors can view team plans without micromanagement
-- **Reflections**: End-of-day reflections for continuous improvement
-- **Comments**: Collaborative feedback on plans and tasks
-- **Workspaces**: Multi-workspace support for teams and organizations
+This repository includes the full product experience, multi-workspace support, organizations, plan-based entitlements, and a security-hardened API layer.
+
+## What It Does
+
+- Plan the day with tasks, time estimates, and scheduling.
+- Track progress and reflections without micromanagement.
+- Support supervisors who need visibility without direct edits.
+- Separate work across personal and organization workspaces.
+- Gate features and limits by subscription plan.
+
+## Core Concepts
+
+### Workspaces
+
+- **Personal workspace**: created automatically on signup. Private by default.
+- **Organization workspace**: created under an organization and visible to org roles.
+- Users can belong to multiple workspaces. The active workspace controls scope.
+
+### Organizations
+
+- Create organizations and invite members by email.
+- Org roles: owner, admin, supervisor, member.
+- Organization workspaces can be created and managed by owners/admins.
+
+### Plans and Tasks
+
+- A plan is a day (YYYY-MM-DD) with a list of tasks and comments.
+- Tasks can be planned or unplanned, estimated, scheduled, and commented on.
+- Supervisors can review and comment but cannot edit others' tasks.
+
+### Entitlements (Plans)
+
+Entitlements combine **features** and **limits**:
+
+- **Features**: enable/disable access (AI, due dates, timeline, kanban, future plans, integrations).
+- **Limits**: maximums (orgs per user, workspaces per org, categories per workspace, org members, etc.).
+
+Entitlements are enforced in both UI and API. When a limit is reached or a feature is locked:
+
+- The UI shows an Upgrade badge.
+- The API returns a 403 with `code=FEATURE_NOT_AVAILABLE` or `code=LIMIT_REACHED`.
+
+## Feature Highlights
+
+- **Daily planning**: create tasks, estimates, and schedule times.
+- **Timeline**: drag tasks on a real time-mapped day view (plan gated).
+- **Kanban**: scrollable multi-day view (plan gated).
+- **Unplanned ideas**: collect tasks before assigning to a plan.
+- **Comments**: per-plan and per-task discussion.
+- **Reflections**: end-of-day review.
+- **Supervisor view**: team plans with read-only details and comments.
+- **Settings**: profile, workspaces, orgs, categories, AI, due dates.
+
+## Access Model
+
+- **Admin user**: global override for all features and limits.
+- **Workspace role**: admin, supervisor, member.
+- **Org role**: owner, admin, supervisor, member.
+
+API endpoints verify membership and role for every mutation.
+
+## Tech Stack
+
+- Next.js 16 (App Router)
+- Bun runtime
+- SQLite via better-sqlite3
+- TanStack React Query
+- Tailwind CSS v4
+- Zod for input validation
 
 ## Getting Started
 
-### Development
-
-Install dependencies and seed a local SQLite database:
+### Install
 
 ```bash
 bun install
 bun run seed
 ```
 
-Start the development server:
+### Run
 
 ```bash
 bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open http://localhost:3000
 
 ### Demo Accounts
 
 Seed data creates:
 
-- `admin@workday.local` / `password123` (admin)
-- `supervisor@workday.local` / `password123` (supervisor)
-- `member@workday.local` / `password123` (member)
+- admin@workday.local / password123 (admin)
+- supervisor@workday.local / password123 (supervisor)
+- member@workday.local / password123 (member)
 
 ### Environment Variables
 
-Create `.env.local` for local development:
-
-```bash
-# Generate a secure secret
-openssl rand -base64 32
-
-# Create .env.local
-echo "AUTH_SECRET=<paste-generated-secret>" > .env.local
-echo "NODE_ENV=development" >> .env.local
-```
-
-See `.env.example` for all available options.
-
-## Production Deployment
-
-### Prerequisites
-
-- Node.js 20+ or Bun 1.0+
-- HTTPS-enabled domain (required for secure cookies)
-- Backup strategy for SQLite database
-
-### Build
-
-```bash
-# Install dependencies
-bun install
-
-# Build for production
-bun run build
-
-# Start production server
-bun start
-```
-
-### Required Environment Variables
+Create `.env` (or `.env.local`) and include:
 
 ```env
-AUTH_SECRET=<your-secure-secret>  # REQUIRED
-NODE_ENV=production               # REQUIRED
+AUTH_SECRET=your-secret-here
+NODE_ENV=development
+DATABASE_PATH=./data/workday.db
+PORT=3000
 ```
 
-### Security Features
+See `.env.example` for defaults and notes.
 
-✅ **Input validation** with Zod schemas
-✅ **CSRF protection** on all state-changing requests
-✅ **Security headers** (CSP, X-Frame-Options, HSTS, etc.)
-✅ **Rate limiting** on auth endpoints
-✅ **Secure cookies** with httpOnly and sameSite: strict
-✅ **SQL injection prevention** through parameterized queries
-✅ **Error boundaries** for graceful error handling
-✅ **Structured logging** for security events
+## Admin Plan Management
 
-See `SECURITY.md` for detailed security documentation.
+Admins can edit plan features and limits in:
 
-### Quick Deploy with PM2
+Settings -> Subscription -> Plan management
+
+Changes immediately affect entitlements and API enforcement.
+
+## Subscription Flow (Mock)
+
+Users can pick a plan in:
+
+Settings -> Subscription -> Manage plan
+
+The UI simulates payment and updates the active plan.
+
+## Security
+
+Security controls built in:
+
+- CSRF protection for state-changing requests
+- Zod validation for API input
+- Rate limiting on auth endpoints
+- Secure cookies and strict headers
+- Structured event logging
+
+Details: `SECURITY.md`
+
+## Common Commands
 
 ```bash
-# Install PM2
-npm install -g pm2
-
-# Start application
-pm2 start "bun start" --name workday
-
-# Save configuration
-pm2 save
-pm2 startup
-
-# Monitor
-pm2 status
-pm2 logs workday
+bun dev          # start dev server
+bun run build    # build production
+bun start        # start prod server
+bun run lint     # lint
+bun run seed     # seed demo data
 ```
 
-### Database Backups
+## Deployment Notes
 
-**CRITICAL**: Set up regular backups of `data/workday.db`
+- Use HTTPS in production.
+- Set a strong `AUTH_SECRET`.
+- Back up `data/workday.db` regularly.
+
+Example backup command:
 
 ```bash
-# Example backup script
 sqlite3 data/workday.db ".backup backups/workday_$(date +%Y%m%d).db"
 ```
 
-Add to crontab for daily backups:
-```bash
-0 2 * * * /path/to/backup-script.sh
-```
+## Folder Map (Selected)
 
-## Documentation
+- `src/app` - pages and API routes
+- `src/components` - UI components
+- `src/lib` - data access, auth, entitlements, validation
+- `scripts/seed.ts` - demo seed
+- `data/` - SQLite database
 
-- **SECURITY.md** - Security hardening details
-- **CLAUDE.md** - Project guidelines and architecture
-- **project-docs/prompt.md** - Original product requirements
+## API Overview (Selected)
 
-## Tech Stack
+- `/api/plans` - get/create plan for a date
+- `/api/tasks` - create tasks
+- `/api/tasks/[id]` - update tasks
+- `/api/history` - list plans
+- `/api/entitlements` - get current entitlements
+- `/api/subscriptions/*` - plan management and subscription changes
 
-- **Framework**: Next.js 16 (App Router)
-- **Runtime**: Bun
-- **Database**: SQLite with better-sqlite3
-- **State**: TanStack React Query
-- **Styling**: Tailwind CSS v4
-- **UI**: Radix UI primitives
-- **Auth**: JWT sessions with jose
-- **Validation**: Zod
+## Troubleshooting
 
-## Development Commands
-
-```bash
-bun dev          # Start development server
-bun run build    # Build for production
-bun start        # Start production server
-bun run lint     # Run ESLint
-bun run seed     # Seed database with demo data
-```
-
-## Support
-
-For issues or questions:
-1. Check existing documentation
-2. Review `SECURITY.md` for security-related questions
-3. Open an issue on GitHub
+- **AUTH_SECRET required**: set it in `.env` for production builds.
+- **CSRF errors**: ensure cookies are set and requests are same-origin.
+- **Missing admin controls**: verify `users.is_admin = 1` in DB.
 
 ## License
 
-[Your License Here]
-# workday
+Proprietary (update as needed).
