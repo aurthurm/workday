@@ -24,7 +24,7 @@ const navItems = [
   { href: "/supervisor", label: "Team Overview", icon: Users },
 ];
 
-export function SidebarNav() {
+export function SidebarNav({ collapsed = false }: { collapsed?: boolean }) {
   const pathname = usePathname();
 
   return (
@@ -36,14 +36,15 @@ export function SidebarNav() {
             key={item.href}
             href={item.href}
             className={cn(
-              "flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition",
+              "flex h-10 items-center gap-2 rounded-xl px-4 text-sm font-medium transition",
+              collapsed && "justify-center px-2",
               isActive
                 ? "bg-tide-100 text-tide-800 shadow-inset"
                 : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
             )}
           >
             <item.icon className="h-4 w-4" />
-            {item.label}
+            {!collapsed && item.label}
           </Link>
         );
       })}
@@ -51,7 +52,13 @@ export function SidebarNav() {
   );
 }
 
-export function UserMenu({ name }: { name: string }) {
+export function UserMenu({
+  name,
+  collapsed = false,
+}: {
+  name: string;
+  collapsed?: boolean;
+}) {
   const router = useRouter();
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
@@ -59,6 +66,9 @@ export function UserMenu({ name }: { name: string }) {
     | "profile"
     | "subscription"
     | "general"
+    | "invitations"
+    | "workspaces"
+    | "organizations"
     | "categories"
     | "integrations"
     | "ai"
@@ -66,18 +76,26 @@ export function UserMenu({ name }: { name: string }) {
   >("profile");
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-4">
       <div className="relative">
         <button
-          className="flex items-center gap-2 text-sm font-medium text-foreground hover:text-foreground"
+          className={cn(
+            "flex h-10 w-full items-center gap-2 text-sm font-medium text-foreground hover:text-foreground",
+            collapsed && "justify-center px-2"
+          )}
           onClick={() => setIsUserMenuOpen((prev) => !prev)}
           type="button"
         >
           <User className="h-4 w-4 text-muted-foreground" />
-          {name}
+          {!collapsed && name}
         </button>
         {isUserMenuOpen && (
-          <div className="absolute left-full bottom-[-24px] z-10 ml-3 w-48 rounded-xl border border-border/70 bg-card p-2 shadow-card">
+          <div
+            className={cn(
+              "absolute z-10 w-48 rounded-xl border border-border/70 bg-card p-2 shadow-card",
+              collapsed ? "left-full bottom-0 ml-3" : "left-full bottom-[-24px] ml-3"
+            )}
+          >
             <Button
               variant="ghost"
               className="w-full justify-start"

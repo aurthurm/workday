@@ -13,6 +13,8 @@ export type WorkspaceRecord = {
   id: string;
   name: string;
   type: "personal" | "organization";
+  org_id?: string | null;
+  is_default?: number;
 };
 
 export type MembershipRecord = {
@@ -55,11 +57,20 @@ export function createUser(params: {
 export function createWorkspace(params: {
   name: string;
   type: "personal" | "organization";
+  orgId?: string | null;
+  isDefault?: number;
 }) {
   const id = randomUUID();
   db.prepare(
-    "INSERT INTO workspaces (id, name, type, created_at) VALUES (?, ?, ?, ?)"
-  ).run(id, params.name, params.type, now());
+    "INSERT INTO workspaces (id, name, type, org_id, is_default, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(
+    id,
+    params.name,
+    params.type,
+    params.orgId ?? null,
+    params.isDefault ?? 0,
+    now()
+  );
   return id;
 }
 
@@ -78,10 +89,15 @@ export function createMembership(params: {
 export function listMembershipsForUser(userId: string) {
   return db
     .prepare(
-      "SELECT memberships.id, memberships.user_id, memberships.workspace_id, memberships.role, workspaces.name, workspaces.type FROM memberships JOIN workspaces ON memberships.workspace_id = workspaces.id WHERE memberships.user_id = ? ORDER BY workspaces.created_at"
+      "SELECT memberships.id, memberships.user_id, memberships.workspace_id, memberships.role, workspaces.name, workspaces.type, workspaces.org_id, workspaces.is_default FROM memberships JOIN workspaces ON memberships.workspace_id = workspaces.id WHERE memberships.user_id = ? ORDER BY workspaces.created_at"
     )
     .all(userId) as Array<
-    MembershipRecord & { name: string; type: "personal" | "organization" }
+    MembershipRecord & {
+      name: string;
+      type: "personal" | "organization";
+      org_id: string | null;
+      is_default: number;
+    }
   >;
 }
 
@@ -98,8 +114,75 @@ export function getMembershipForUser(
 
 export function getWorkspaceById(id: string) {
   return db
-    .prepare("SELECT id, name, type FROM workspaces WHERE id = ?")
+    .prepare("SELECT id, name, type, org_id, is_default FROM workspaces WHERE id = ?")
     .get(id) as WorkspaceRecord | undefined;
+}
+
+export type OrgRole = "owner" | "admin" | "supervisor" | "member";
+
+export type OrganizationRecord = {
+  id: string;
+  name: string;
+  slug: string;
+};
+
+export function createOrganization(params: {
+  name: string;
+  slug: string;
+  createdBy: string;
+}) {
+  const id = randomUUID();
+  db.prepare(
+    "INSERT INTO organizations (id, name, slug, created_by, created_at) VALUES (?, ?, ?, ?, ?)"
+  ).run(id, params.name, params.slug, params.createdBy, now());
+  return id;
+}
+
+export function addOrgMember(params: {
+  orgId: string;
+  userId: string;
+  role: OrgRole;
+  status: "active" | "invited" | "disabled";
+}) {
+  const id = randomUUID();
+  db.prepare(
+    "INSERT OR IGNORE INTO org_members (id, org_id, user_id, role, status, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(id, params.orgId, params.userId, params.role, params.status, now());
+  return id;
+}
+
+export function listOrganizationsForUser(userId: string) {
+  return db
+    .prepare(
+      "SELECT organizations.id, organizations.name, organizations.slug, org_members.role, org_members.status FROM org_members JOIN organizations ON organizations.id = org_members.org_id WHERE org_members.user_id = ? AND org_members.status = 'active' ORDER BY organizations.created_at DESC"
+    )
+    .all(userId) as Array<
+    OrganizationRecord & { role: OrgRole; status: string }
+  >;
+}
+
+export function getOrganizationById(id: string) {
+  return db
+    .prepare("SELECT id, name, slug FROM organizations WHERE id = ?")
+    .get(id) as OrganizationRecord | undefined;
+}
+
+export function getOrgMembership(userId: string, orgId: string) {
+  return db
+    .prepare(
+      "SELECT id, org_id, user_id, role, status FROM org_members WHERE user_id = ? AND org_id = ?"
+    )
+    .get(userId, orgId) as
+    | { id: string; org_id: string; user_id: string; role: OrgRole; status: string }
+    | undefined;
+}
+
+export function getDefaultOrgWorkspace(orgId: string) {
+  return db
+    .prepare(
+      "SELECT id, name, type, org_id, is_default FROM workspaces WHERE org_id = ? AND is_default = 1 LIMIT 1"
+    )
+    .get(orgId) as WorkspaceRecord | undefined;
 }
 
 export function getActiveWorkspace(

@@ -50,6 +50,10 @@ type HistoryResponse = {
   }>;
 };
 
+type WorkspacesResponse = {
+  activeWorkspaceId: string | null;
+};
+
 type KanbanPlan = {
   id: string;
   date: string;
@@ -272,11 +276,16 @@ export default function HistoryPage() {
         "/api/settings"
       ),
   });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: () => apiFetch<WorkspacesResponse>("/api/workspaces"),
+  });
+  const activeWorkspaceId = workspacesQuery.data?.activeWorkspaceId ?? "none";
   const dueSoonDays = settingsQuery.data?.settings.due_soon_days ?? 3;
   const taskAddPosition = settingsQuery.data?.settings.task_add_position ?? "bottom";
   const defaultEstMinutes = settingsQuery.data?.settings.default_est_minutes ?? 15;
   const categoriesQuery = useQuery({
-    queryKey: ["categories"],
+    queryKey: ["categories", activeWorkspaceId],
     queryFn: () =>
       apiFetch<{
         categories: Array<{ id: string; name: string; color: string }>;

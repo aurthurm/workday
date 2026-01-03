@@ -49,6 +49,10 @@ type TeamPlansResponse = {
   }>;
 };
 
+type WorkspacesResponse = {
+  activeWorkspaceId: string | null;
+};
+
 const defaultCategories = [
   { name: "Admin", color: "#2563eb" },
   { name: "Technical", color: "#0f766e" },
@@ -75,8 +79,13 @@ export default function SupervisorPage() {
     queryKey: ["team-plans", dateValue],
     queryFn: () => apiFetch<TeamPlansResponse>(`/api/team/plans?date=${dateValue}`),
   });
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: () => apiFetch<WorkspacesResponse>("/api/workspaces"),
+  });
+  const activeWorkspaceId = workspacesQuery.data?.activeWorkspaceId ?? "none";
   const categoriesQuery = useQuery({
-    queryKey: ["categories"],
+    queryKey: ["categories", activeWorkspaceId],
     queryFn: () =>
       apiFetch<{
         categories: Array<{ id: string; name: string; color: string }>;

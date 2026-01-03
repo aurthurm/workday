@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import {
   Select,
@@ -9,7 +9,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
 
 type WorkspaceResponse = {
   workspaces: Array<{
@@ -17,6 +16,8 @@ type WorkspaceResponse = {
     name: string;
     type: "personal" | "organization";
     role: "member" | "supervisor" | "admin";
+    org_id?: string | null;
+    is_default?: number;
   }>;
   activeWorkspaceId: string | null;
 };
@@ -26,6 +27,7 @@ export function WorkspaceSwitcher() {
     queryKey: ["workspaces"],
     queryFn: () => apiFetch<WorkspaceResponse>("/api/workspaces"),
   });
+  const queryClient = useQueryClient();
 
   const switchMutation = useMutation({
     mutationFn: (workspaceId: string) =>
@@ -33,31 +35,23 @@ export function WorkspaceSwitcher() {
         method: "POST",
         body: { workspaceId },
       }),
-    onSuccess: () => refetch(),
-  });
-
-  const createMutation = useMutation({
-    mutationFn: () =>
-      apiFetch<{ id: string }>("/api/workspaces", {
-        method: "POST",
-        body: { name: "New Workspace", type: "organization" },
-      }),
-    onSuccess: () => refetch(),
+    onSuccess: () => {
+      refetch();
+      queryClient.invalidateQueries({ queryKey: ["categories"] });
+      queryClient.invalidateQueries({ queryKey: ["plan"] });
+      queryClient.invalidateQueries({ queryKey: ["history"] });
+      queryClient.invalidateQueries({ queryKey: ["ideas"] });
+    },
   });
 
   const activeId = data?.activeWorkspaceId ?? "";
-  const activeRole =
-    data?.workspaces.find((workspace) => workspace.id === activeId)?.role ??
-    "member";
-  const canCreate = activeRole === "admin";
-
   return (
-    <div className="flex flex-col gap-3 rounded-2xl border border-border/70 bg-card/80 p-4 shadow-inset">
+    <div className="flex flex-col gap-3">
+      <hr />
       <div>
         <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Workspace
+          Workspace Switcher
         </p>
-        <p className="text-sm text-muted-foreground">Switch context</p>
       </div>
       <Select
         value={activeId || undefined}
@@ -66,22 +60,15 @@ export function WorkspaceSwitcher() {
       <SelectTrigger className="w-full bg-background">
           <SelectValue placeholder="Choose workspace" />
         </SelectTrigger>
-        <SelectContent>
-          {data?.workspaces.map((workspace) => (
-            <SelectItem key={workspace.id} value={workspace.id}>
-              {workspace.name} · {workspace.role}
-            </SelectItem>
-          ))}
-        </SelectContent>
+      <SelectContent>
+        {data?.workspaces.map((workspace) => (
+          <SelectItem key={workspace.id} value={workspace.id}>
+            {workspace.name} · {workspace.role}
+          </SelectItem>
+        ))}
+      </SelectContent>
       </Select>
-      <Button
-        variant="outline"
-        className="h-9 text-xs"
-        onClick={() => createMutation.mutate()}
-        disabled={!canCreate || createMutation.isPending}
-      >
-        {createMutation.isPending ? "Creating..." : "New workspace"}
-      </Button>
+      <hr />
     </div>
   );
 }

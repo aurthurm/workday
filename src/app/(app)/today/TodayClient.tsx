@@ -71,6 +71,10 @@ type PlanResponse = {
   };
 };
 
+type WorkspacesResponse = {
+  activeWorkspaceId: string | null;
+};
+
 const defaultCategories = [
   { name: "Admin", color: "#2563eb" },
   { name: "Technical", color: "#0f766e" },
@@ -125,8 +129,14 @@ export default function TodayClient() {
 
   const plan = planQuery.data?.plan ?? null;
 
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: () => apiFetch<WorkspacesResponse>("/api/workspaces"),
+  });
+  const activeWorkspaceId = workspacesQuery.data?.activeWorkspaceId ?? "none";
+
   const categoriesQuery = useQuery({
-    queryKey: ["categories"],
+    queryKey: ["categories", activeWorkspaceId],
     queryFn: () =>
       apiFetch<{
         categories: Array<{ id: string; name: string; color: string }>;

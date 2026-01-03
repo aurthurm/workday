@@ -27,7 +27,42 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     type TEXT NOT NULL,
+    org_id TEXT,
+    is_default INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS organizations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    created_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(created_by) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS org_members (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(org_id, user_id),
+    FOREIGN KEY(org_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS org_invites (
+    id TEXT PRIMARY KEY,
+    org_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    accepted_at TEXT,
+    created_at TEXT NOT NULL,
+    FOREIGN KEY(org_id) REFERENCES organizations(id) ON DELETE CASCADE
   );
 
   CREATE TABLE IF NOT EXISTS memberships (
@@ -304,6 +339,16 @@ db.exec(`
   WHERE daily_plan_id IS NOT NULL
     AND (user_id IS NULL OR workspace_id IS NULL);
 `);
+
+const workspaceColumns = db
+  .prepare("PRAGMA table_info(workspaces)")
+  .all() as Array<{ name: string }>;
+if (!workspaceColumns.some((column) => column.name === "org_id")) {
+  db.exec("ALTER TABLE workspaces ADD COLUMN org_id TEXT");
+}
+if (!workspaceColumns.some((column) => column.name === "is_default")) {
+  db.exec("ALTER TABLE workspaces ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0");
+}
 
 const categoriesColumns = db
   .prepare("PRAGMA table_info(categories)")

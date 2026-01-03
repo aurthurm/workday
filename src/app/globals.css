@@ -171,3 +171,7 @@
     background-color: transparent;
   }
 }
+
+.swal2-container {
+  z-index: 10050 !important;
+}

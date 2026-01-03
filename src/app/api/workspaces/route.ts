@@ -24,6 +24,8 @@ export async function GET() {
       name: membership.name,
       type: membership.type,
       role: membership.role,
+      org_id: membership.org_id,
+      is_default: membership.is_default,
     })),
     activeWorkspaceId: active?.workspace?.id ?? null,
   });
@@ -48,17 +50,20 @@ export async function POST(request: Request) {
     );
   }
 
-  const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
-  if (!active || active.membership.role !== "admin") {
-    return NextResponse.json(
-      { error: "Only admins can create workspaces." },
-      { status: 403 }
-    );
+  const type = body.type ?? "organization";
+  if (type !== "personal") {
+    const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
+    if (!active || active.membership.role !== "admin") {
+      return NextResponse.json(
+        { error: "Only admins can create workspaces." },
+        { status: 403 }
+      );
+    }
   }
 
   const workspaceId = createWorkspace({
     name,
-    type: body.type ?? "organization",
+    type,
   });
   createMembership({ userId: session.userId, workspaceId, role: "admin" });
   const defaultCategories = [
@@ -80,5 +85,5 @@ export async function POST(request: Request) {
   });
   await setWorkspaceCookie(workspaceId);
 
-  return NextResponse.json({ id: workspaceId, name, type: body.type ?? "organization" });
+  return NextResponse.json({ id: workspaceId, name, type });
 }

@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
-import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +16,8 @@ import {
 import { apiFetch } from "@/lib/api";
 import { formatRelativeTime } from "@/lib/time";
 import { TaskListItem } from "@/components/task-list-item";
+import { cn } from "@/lib/utils";
+import { ChevronRight, ChevronLeft, Lightbulb } from "lucide-react";
 
 type Idea = {
   id: string;
@@ -28,6 +28,10 @@ type Idea = {
   recurrence_rule: string | null;
   repeat_till: string | null;
   created_at: string;
+};
+
+type WorkspacesResponse = {
+  activeWorkspaceId: string | null;
 };
 
 const defaultCategories = [
@@ -56,15 +60,21 @@ const getStartTimeInput = (value: string | null) =>
 export function RightRail() {
   const pathname = usePathname();
   const showIdeas = pathname === "/today" || pathname === "/history";
-  const [tab, setTab] = useState(showIdeas ? "ideas" : "guidance");
+  const [panelOpen, setPanelOpen] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [draft, setDraft] = useState({
     title: "",
     category: defaultCategories[0].name,
   });
 
+  const workspacesQuery = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: () => apiFetch<WorkspacesResponse>("/api/workspaces"),
+  });
+  const activeWorkspaceId = workspacesQuery.data?.activeWorkspaceId ?? "none";
+
   const categoriesQuery = useQuery({
-    queryKey: ["categories"],
+    queryKey: ["categories", activeWorkspaceId],
     queryFn: () =>
       apiFetch<{
         categories: Array<{ id: string; name: string; color: string }>;
@@ -92,10 +102,6 @@ export function RightRail() {
   const getCategoryColor = (name: string) =>
     categoryColors.get(name) ?? "#64748b";
   useEffect(() => {
-    setTab(showIdeas ? "ideas" : "guidance");
-  }, [showIdeas]);
-
-  useEffect(() => {
     setDraft((prev) => {
       if (categories.length === 0) return prev;
       if (categories.includes(prev.category)) {
@@ -110,6 +116,8 @@ export function RightRail() {
     queryFn: () => apiFetch<{ ideas: Idea[] }>("/api/tasks?scope=unplanned"),
     enabled: showIdeas,
   });
+  const ideas = ideasQuery.data?.ideas ?? [];
+  const sortedIdeas = useMemo(() => ideas, [ideas]);
 
   useEffect(() => {
     if (!showIdeas) return;
@@ -122,15 +130,12 @@ export function RightRail() {
     mutationFn: () =>
       apiFetch("/api/tasks", {
         method: "POST",
-        body: {
-          title: draft.title,
-          category: draft.category,
-        },
+        body: { title: draft.title, category: draft.category },
       }),
     onSuccess: () => {
-      setDraft({ title: "", category: categories[0] ?? "Other" });
-      setShowAddForm(false);
       ideasQuery.refetch();
+      setDraft({ title: "", category: categories[0] ?? "Admin" });
+      setShowAddForm(false);
     },
   });
 
@@ -140,18 +145,19 @@ export function RightRail() {
     onSuccess: () => ideasQuery.refetch(),
   });
 
+  const handleIdeaDragStart = (event: DragEvent, id: string) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+    event.dataTransfer.setData("application/x-task-id", id);
+  };
+
   const handleTitleSave = async (
     taskId: string,
     _day: string,
-    nextTitle: string
+    title: string
   ) => {
-    const trimmed = nextTitle.trim();
-    if (!trimmed) return;
-    await apiFetch(`/api/tasks/${taskId}`, {
-      method: "PUT",
-      body: { title: trimmed },
-    });
-    await ideasQuery.refetch();
+    await apiFetch(`/api/tasks/${taskId}`, { method: "PATCH", body: { title } });
+    ideasQuery.refetch();
   };
 
   const handleTimeSave = async (
@@ -161,13 +167,13 @@ export function RightRail() {
     estimatedMinutes: string
   ) => {
     await apiFetch(`/api/tasks/${taskId}`, {
-      method: "PUT",
+      method: "PATCH",
       body: {
-        startTime: startTime || null,
-        estimatedMinutes: estimatedMinutes ? Number(estimatedMinutes) : null,
+        start_time: startTime || null,
+        estimated_minutes: estimatedMinutes ? Number(estimatedMinutes) : null,
       },
     });
-    await ideasQuery.refetch();
+    ideasQuery.refetch();
   };
 
   const handleCategorySave = async (
@@ -176,77 +182,79 @@ export function RightRail() {
     category: string
   ) => {
     await apiFetch(`/api/tasks/${taskId}`, {
-      method: "PUT",
+      method: "PATCH",
       body: { category },
     });
-    await ideasQuery.refetch();
+    ideasQuery.refetch();
   };
+
   const handleRecurrenceSave = async (
     taskId: string,
     _day: string,
     recurrenceRule: string | null
   ) => {
     await apiFetch(`/api/tasks/${taskId}`, {
-      method: "PUT",
-      body: { recurrenceRule },
+      method: "PATCH",
+      body: { recurrence_rule: recurrenceRule },
     });
-    await ideasQuery.refetch();
+    ideasQuery.refetch();
   };
+
   const handleRepeatTill = async (
     taskId: string,
     _day: string,
     repeatTill: string
   ) => {
     await apiFetch(`/api/tasks/${taskId}`, {
-      method: "PUT",
-      body: { repeatTill },
+      method: "PATCH",
+      body: { repeat_till: repeatTill },
     });
-    await ideasQuery.refetch();
+    ideasQuery.refetch();
   };
+
   const handleDeleteRepeat = async (taskId: string, _day: string) => {
     await apiFetch(`/api/tasks/${taskId}`, {
-      method: "PUT",
-      body: { recurrenceRule: null },
+      method: "PATCH",
+      body: { recurrence_rule: null, repeat_till: null },
     });
-    await ideasQuery.refetch();
+    ideasQuery.refetch();
   };
-  const handleIdeaDragStart = (event: DragEvent<HTMLDivElement>, taskId: string) => {
-    event.dataTransfer.setData("text/task-id", taskId);
-    event.dataTransfer.setData("text/source-day", "unplanned");
-    event.dataTransfer.effectAllowed = "move";
-  };
-
-  const ideas = ideasQuery.data?.ideas ?? [];
-  const sortedIdeas = useMemo(() => ideas, [ideas]);
 
   return (
-    <div className="flex flex-col gap-6">
-      <WorkspaceSwitcher />
-      <Card className="rounded-2xl border border-border/70 bg-card/80 p-5 shadow-inset">
-        {showIdeas ? (
-          <Tabs value={tab} onValueChange={setTab}>
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                Right rail
-              </p>
-              <TabsList>
-                <TabsTrigger value="guidance">Guidance</TabsTrigger>
-                <TabsTrigger value="ideas">Idea dump</TabsTrigger>
-              </TabsList>
-            </div>
-            <TabsContent value="guidance" className="mt-4">
-              <h3 className="text-sm font-semibold text-foreground">
-                Guiding principle
-              </h3>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Make work visible without making people feel watched. Use this
-                space to encourage, not to control.
-              </p>
-            </TabsContent>
-            <TabsContent value="ideas" className="mt-4 space-y-3">
-              <div>
+    <>
+      {/* Detail Drawer - slides left when open */}
+      <section
+        className={cn(
+          "absolute right-14 top-0 z-10 h-full w-48 border-l border-border/70 bg-card/95 shadow-card transition-transform duration-200 ease-out",
+          panelOpen
+            ? "translate-x-0 pointer-events-auto visible"
+            : "translate-x-full pointer-events-none invisible"
+        )}
+        aria-hidden={!panelOpen}
+      >
+        <div className="flex h-14 items-center justify-between border-b border-border/70 px-4">
+          <div className="flex items-center gap-2">
+            <Lightbulb className="h-4 w-4" />
+            <strong className="text-sm">Idea Dump</strong>
+          </div>
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card/60 text-muted-foreground hover:text-foreground"
+            onClick={() => setPanelOpen(false)}
+            title="Close panel"
+            aria-label="Close right detail panel"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="h-[calc(100%-3.5rem)] overflow-auto p-4">
+          <div className="space-y-3">
+            {showIdeas && (
+              <>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-foreground">Idea dump</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Capture unplanned ideas without committing them to a plan.
+                  </p>
                   <Button
                     size="sm"
                     variant="outline"
@@ -256,116 +264,135 @@ export function RightRail() {
                     {showAddForm ? "Cancel" : "+ Task"}
                   </Button>
                 </div>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Capture unplanned ideas without committing them to a plan.
+                {showAddForm && (
+                  <div className="space-y-2 rounded-xl border border-border/70 bg-muted/50 p-3">
+                    <Input
+                      value={draft.title}
+                      onChange={(event) =>
+                        setDraft((prev) => ({
+                          ...prev,
+                          title: event.target.value,
+                        }))
+                      }
+                      placeholder="New idea..."
+                    />
+                    <Select
+                      value={draft.category}
+                      onValueChange={(value) =>
+                        setDraft((prev) => ({ ...prev, category: value }))
+                      }
+                    >
+                      <SelectTrigger className="w-full bg-background">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {categories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="h-2 w-2 rounded-full"
+                                style={{ backgroundColor: getCategoryColor(category) }}
+                              />
+                              {category}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="sm"
+                      onClick={() => createMutation.mutate()}
+                      disabled={!draft.title.trim() || createMutation.isPending}
+                    >
+                      Add idea
+                    </Button>
+                  </div>
+                )}
+                <div className="space-y-3">
+                  {sortedIdeas.map((idea) => (
+                    <div key={idea.id} className="space-y-2">
+                      <TaskListItem
+                        task={{
+                          ...idea,
+                          status: "unplanned",
+                          actual_minutes: null,
+                          start_time: null,
+                          end_time: null,
+                        }}
+                        day="unplanned"
+                        variant="kanban"
+                        draggable
+                        onDragStart={(event) => handleIdeaDragStart(event, idea.id)}
+                        categories={categories}
+                        getCategoryColor={getCategoryColor}
+                        normalizeStatus={normalizeStatus}
+                        formatEstimated={formatEstimated}
+                        getStartTimeInput={getStartTimeInput}
+                        onSaveTitle={handleTitleSave}
+                        onSaveTime={handleTimeSave}
+                        onSaveCategory={handleCategorySave}
+                        onSaveRecurrence={handleRecurrenceSave}
+                        onSetRepeatTill={handleRepeatTill}
+                        onDeleteRepeat={handleDeleteRepeat}
+                        dueSoonDays={dueSoonDays}
+                      />
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>{formatRelativeTime(idea.created_at)}</span>
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => deleteMutation.mutate(idea.id)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  {!ideasQuery.isLoading && sortedIdeas.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      No ideas mind dumped yet.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+            {!showIdeas && (
+              <div className="rounded-2xl border border-border/70 bg-card/80 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Idea dump is available on Today and Plans.
                 </p>
               </div>
-              {showAddForm && (
-                <div className="space-y-2 rounded-xl border border-border/70 bg-muted/50 p-3">
-                  <Input
-                    value={draft.title}
-                    onChange={(event) =>
-                      setDraft((prev) => ({
-                        ...prev,
-                        title: event.target.value,
-                      }))
-                    }
-                    placeholder="New idea..."
-                  />
-                  <Select
-                    value={draft.category}
-                    onValueChange={(value) =>
-                      setDraft((prev) => ({ ...prev, category: value }))
-                    }
-                  >
-                    <SelectTrigger className="w-full bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((category) => (
-                        <SelectItem key={category} value={category}>
-                          <span className="flex items-center gap-2">
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{ backgroundColor: getCategoryColor(category) }}
-                            />
-                            {category}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    size="sm"
-                    onClick={() => createMutation.mutate()}
-                    disabled={!draft.title.trim() || createMutation.isPending}
-                  >
-                    Add idea
-                  </Button>
-                </div>
-              )}
-              <div className="space-y-3">
-                {sortedIdeas.map((idea) => (
-                  <div key={idea.id} className="space-y-2">
-                    <TaskListItem
-                      task={{
-                        ...idea,
-                        status: "unplanned",
-                        actual_minutes: null,
-                        start_time: null,
-                        end_time: null,
-                      }}
-                      day="unplanned"
-                      variant="kanban"
-                      draggable
-                      onDragStart={(event) => handleIdeaDragStart(event, idea.id)}
-                      categories={categories}
-                      getCategoryColor={getCategoryColor}
-                      normalizeStatus={normalizeStatus}
-                      formatEstimated={formatEstimated}
-                      getStartTimeInput={getStartTimeInput}
-                      onSaveTitle={handleTitleSave}
-                      onSaveTime={handleTimeSave}
-                      onSaveCategory={handleCategorySave}
-                      onSaveRecurrence={handleRecurrenceSave}
-                      onSetRepeatTill={handleRepeatTill}
-                      onDeleteRepeat={handleDeleteRepeat}
-                      dueSoonDays={dueSoonDays}
-                    />
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                      <span>{formatRelativeTime(idea.created_at)}</span>
-                      <button
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={() => deleteMutation.mutate(idea.id)}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ))}
-                {!ideasQuery.isLoading && sortedIdeas.length === 0 && (
-                  <p className="text-sm text-muted-foreground">
-                    No ideas mind dumped yet.
-                  </p>
-                )}
-              </div>
-            </TabsContent>
-          </Tabs>
-        ) : (
-          <>
-            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-              Guiding principle
-            </p>
-            <h3 className="mt-2 text-sm font-semibold text-foreground">
-              Guiding principle
-            </h3>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Make work visible without making people feel watched. Use this
-              space to encourage, not to control.
-            </p>
-          </>
-        )}
-      </Card>
-    </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Icon Rail - always visible */}
+      <aside className="z-20 flex h-full w-14 flex-col items-center border-l border-border/70 bg-card/80">
+        <div className="flex h-14 w-full items-center justify-center border-b border-border/70">
+          <button
+            className="flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card/60 text-muted-foreground hover:text-foreground"
+            onClick={() => setPanelOpen((prev) => !prev)}
+            title={panelOpen ? "Hide details" : "Show details"}
+            aria-label="Toggle right details drawer"
+          >
+            {panelOpen ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          </button>
+        </div>
+
+        <nav className="flex w-full flex-col items-center gap-2 p-2">
+          <button
+            type="button"
+            className={cn(
+              "flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 text-muted-foreground transition",
+              panelOpen && "bg-card/60 text-foreground shadow-sm outline outline-2 outline-border/50"
+            )}
+            title="Idea dump"
+            onClick={() => setPanelOpen(true)}
+          >
+            <Lightbulb className="h-4 w-4" />
+          </button>
+        </nav>
+      </aside>
+    </>
   );
 }
