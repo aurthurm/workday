@@ -65,6 +65,7 @@ type TaskDetailPanelProps = {
   comments?: TaskComment[];
   onUpdated?: () => void;
   onDeleted?: () => void;
+  readOnly?: boolean;
 };
 
 const recurrenceOptions = [
@@ -90,6 +91,7 @@ export function TaskDetailPanel({
   comments = [],
   onUpdated,
   onDeleted,
+  readOnly = false,
 }: TaskDetailPanelProps) {
   const [subtaskDraft, setSubtaskDraft] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
@@ -118,6 +120,7 @@ export function TaskDetailPanel({
   };
 
   const handleDelete = async () => {
+    if (readOnly) return;
     const result = await Swal.fire({
       title: "Remove task?",
       text: "This cannot be undone.",
@@ -134,6 +137,7 @@ export function TaskDetailPanel({
   };
 
   const uploadAttachment = async () => {
+    if (readOnly) return;
     if (attachmentFiles.length === 0) return;
     for (const file of attachmentFiles) {
       const formData = new FormData();
@@ -156,6 +160,7 @@ export function TaskDetailPanel({
   };
 
   const removeAttachment = async (attachmentId: string) => {
+    if (readOnly) return;
     await apiFetch(
       `/api/tasks/${task.id}/attachments?attachmentId=${attachmentId}`,
       { method: "DELETE" }
@@ -164,6 +169,7 @@ export function TaskDetailPanel({
   };
 
   const createSubtask = async () => {
+    if (readOnly) return;
     const trimmed = subtaskDraft.trim();
     if (!trimmed) return;
     await apiFetch(`/api/tasks/${task.id}/subtasks`, {
@@ -175,6 +181,7 @@ export function TaskDetailPanel({
   };
 
   const updateSubtask = async (subtaskId: string, completed: boolean) => {
+    if (readOnly) return;
     await apiFetch(`/api/tasks/${task.id}/subtasks`, {
       method: "PUT",
       body: { subtaskId, completed },
@@ -183,6 +190,7 @@ export function TaskDetailPanel({
   };
 
   const deleteSubtask = async (subtaskId: string) => {
+    if (readOnly) return;
     await apiFetch(`/api/tasks/${task.id}/subtasks?subtaskId=${subtaskId}`, {
       method: "DELETE",
     });
@@ -201,15 +209,17 @@ export function TaskDetailPanel({
           <span className="status-pill" data-status={task.status}>
             {statusLabel(task.status)}
           </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-red-600 hover:text-red-700"
-            onClick={handleDelete}
-            aria-label="Remove task"
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-red-600 hover:text-red-700"
+              onClick={handleDelete}
+              aria-label="Remove task"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       </div>
       <div className="space-y-3">
@@ -221,6 +231,7 @@ export function TaskDetailPanel({
             defaultValue={task.title}
             className="flex-1"
             onBlur={(event) => updateTask({ title: event.target.value })}
+            disabled={readOnly}
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -230,6 +241,7 @@ export function TaskDetailPanel({
           <Select
             defaultValue={task.category}
             onValueChange={(value) => updateTask({ category: value })}
+            disabled={readOnly}
           >
             <SelectTrigger className="w-[180px] bg-card">
               <SelectValue />
@@ -254,6 +266,7 @@ export function TaskDetailPanel({
           <Select
             defaultValue={task.status}
             onValueChange={(value) => updateTask({ status: value })}
+            disabled={readOnly}
           >
             <SelectTrigger className="w-[160px] bg-card">
               <SelectValue />
@@ -283,6 +296,7 @@ export function TaskDetailPanel({
                   : null,
               })
             }
+            disabled={readOnly}
           />
           <Input
             type="time"
@@ -298,6 +312,7 @@ export function TaskDetailPanel({
             className="w-[140px]"
             placeholder="Start"
             onBlur={(event) => updateTask({ startTime: event.target.value })}
+            disabled={readOnly}
           />
           <Input
             type="number"
@@ -311,6 +326,7 @@ export function TaskDetailPanel({
                   : null,
               })
             }
+            disabled={readOnly}
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -322,6 +338,7 @@ export function TaskDetailPanel({
             defaultValue={task.due_date ?? ""}
             className="w-[180px]"
             onBlur={(event) => updateTask({ dueDate: event.target.value || null })}
+            disabled={readOnly}
           />
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -331,6 +348,7 @@ export function TaskDetailPanel({
           <Select
             defaultValue={task.priority ?? "none"}
             onValueChange={(value) => updateTask({ priority: value })}
+            disabled={readOnly}
           >
             <SelectTrigger className="w-[160px] bg-card">
               <SelectValue />
@@ -353,6 +371,7 @@ export function TaskDetailPanel({
             placeholder="Notes"
             className="flex-1"
             onBlur={(event) => updateTask({ notes: event.target.value })}
+            disabled={readOnly}
           />
         </div>
         <div className="flex items-start gap-3">
@@ -361,29 +380,36 @@ export function TaskDetailPanel({
           </span>
           <div className="flex-1 space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <label className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-card px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm hover:bg-muted">
-                <input
-                  ref={attachmentInputRef}
-                  type="file"
-                  multiple
-                  className="sr-only"
-                  onChange={(event) =>
-                    setAttachmentFiles(Array.from(event.target.files ?? []))
-                  }
-                />
-                Choose files
-                {attachmentFiles.length > 0 && (
-                  <span className="text-muted-foreground">
-                    ({attachmentFiles.length})
-                  </span>
-                )}
-              </label>
-              <Button onClick={uploadAttachment} disabled={attachmentFiles.length === 0}>
-                Upload
-              </Button>
+              {!readOnly && (
+                <>
+                  <label className="inline-flex items-center gap-2 rounded-md border border-border/70 bg-card px-3 py-2 text-xs font-medium text-muted-foreground shadow-sm hover:bg-muted">
+                    <input
+                      ref={attachmentInputRef}
+                      type="file"
+                      multiple
+                      className="sr-only"
+                      onChange={(event) =>
+                        setAttachmentFiles(Array.from(event.target.files ?? []))
+                      }
+                    />
+                    Choose files
+                    {attachmentFiles.length > 0 && (
+                      <span className="text-muted-foreground">
+                        ({attachmentFiles.length})
+                      </span>
+                    )}
+                  </label>
+                  <Button
+                    onClick={uploadAttachment}
+                    disabled={attachmentFiles.length === 0}
+                  >
+                    Upload
+                  </Button>
+                </>
+              )}
             </div>
             <div className="space-y-2">
-              {task.attachments.map((attachment) => {
+              {(task.attachments ?? []).map((attachment) => {
                 const filename = attachment.url.split("/").pop() ?? attachment.url;
                 return (
                   <div
@@ -399,17 +425,19 @@ export function TaskDetailPanel({
                       >
                         Download
                       </a>
-                      <button
-                        className="text-muted-foreground hover:text-foreground"
-                        onClick={() => removeAttachment(attachment.id)}
-                      >
-                        Delete
-                      </button>
+                      {!readOnly && (
+                        <button
+                          className="text-muted-foreground hover:text-foreground"
+                          onClick={() => removeAttachment(attachment.id)}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
               })}
-              {task.attachments.length === 0 && (
+              {(task.attachments ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   No attachments yet.
                 </p>
@@ -422,31 +450,34 @@ export function TaskDetailPanel({
             Subtasks
           </span>
           <div className="flex-1 space-y-2">
-            <div className="flex flex-wrap gap-2">
-              <Input
-                value={subtaskDraft}
-                placeholder="Add a subtask"
-                onChange={(event) => setSubtaskDraft(event.target.value)}
-                className="flex-1"
-              />
-              <Button onClick={createSubtask} disabled={!subtaskDraft.trim()}>
-                Add
-              </Button>
-            </div>
+            {!readOnly && (
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  value={subtaskDraft}
+                  placeholder="Add a subtask"
+                  onChange={(event) => setSubtaskDraft(event.target.value)}
+                  className="flex-1"
+                />
+                <Button onClick={createSubtask} disabled={!subtaskDraft.trim()}>
+                  Add
+                </Button>
+              </div>
+            )}
             <div className="space-y-2">
-              {task.subtasks.map((subtask) => (
+              {(task.subtasks ?? []).map((subtask) => (
                 <div
                   key={subtask.id}
                   className="flex items-center justify-between rounded-lg border border-border/70 bg-card px-3 py-2 text-xs"
                 >
                   <label className="flex items-center gap-2 text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(subtask.completed)}
-                      onChange={(event) =>
-                        updateSubtask(subtask.id, event.target.checked)
-                      }
-                    />
+                  <input
+                    type="checkbox"
+                    checked={Boolean(subtask.completed)}
+                    onChange={(event) =>
+                      updateSubtask(subtask.id, event.target.checked)
+                    }
+                    disabled={readOnly}
+                  />
                     <span
                       className={
                         subtask.completed ? "line-through text-muted-foreground" : ""
@@ -455,15 +486,17 @@ export function TaskDetailPanel({
                       {subtask.title}
                     </span>
                   </label>
-                  <button
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => deleteSubtask(subtask.id)}
-                  >
-                    Remove
-                  </button>
+                  {!readOnly && (
+                    <button
+                      className="text-muted-foreground hover:text-foreground"
+                      onClick={() => deleteSubtask(subtask.id)}
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               ))}
-              {task.subtasks.length === 0 && (
+              {(task.subtasks ?? []).length === 0 && (
                 <p className="text-xs text-muted-foreground">
                   No subtasks yet.
                 </p>
@@ -484,6 +517,7 @@ export function TaskDetailPanel({
                     recurrenceRule: value === "none" ? null : value,
                   })
                 }
+                disabled={readOnly}
               >
                 <SelectTrigger className="w-[220px] bg-card">
                   <SelectValue />
@@ -502,9 +536,10 @@ export function TaskDetailPanel({
                   defaultValue={task.recurrence_time ?? ""}
                   onBlur={(event) => updateTask({ recurrenceTime: event.target.value })}
                   className="w-[140px]"
+                  disabled={readOnly}
                 />
               )}
-              {task.recurrence_rule && task.recurrence_rule !== "none" && (
+              {task.recurrence_rule && task.recurrence_rule !== "none" && !readOnly && (
                 <>
                   <Button
                     variant="outline"
