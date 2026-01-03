@@ -16,6 +16,8 @@ import {
 } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, featureAllowed } from "@/lib/entitlements";
+import { featureNotAvailable } from "@/lib/entitlement-errors";
 
 const now = () => new Date().toISOString();
 
@@ -91,6 +93,13 @@ export async function PUT(
     return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
   const body = parsed.data;
+  const entitlements = getEntitlements(session.userId);
+  if (
+    typeof body.dueDate === "string" &&
+    !featureAllowed(entitlements, "feature.due_dates")
+  ) {
+    return featureNotAvailable("feature.due_dates");
+  }
   const isLockedTask = ["done", "cancelled", "skipped"].includes(task.status);
   if (isLockedTask) {
     const isReinstate =

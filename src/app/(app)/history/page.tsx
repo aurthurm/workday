@@ -21,6 +21,7 @@ import { TaskListItem } from "@/components/task-list-item";
 import { TaskDetailPanel } from "@/components/task-detail-panel";
 import { EmptyState } from "@/components/empty-state";
 import { LoadingSpinner } from "@/components/loading-spinner";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 type HistoryResponse = {
   plans: Array<{
@@ -218,6 +219,11 @@ const buildDateRange = (start: string, end: string) => {
 export default function HistoryPage() {
   const todayKey = useMemo(() => toDateKey(new Date()), []);
   const [view, setView] = useState<"listview" | "kanban">("listview");
+  const entitlementsQuery = useEntitlements();
+  const canViewKanban =
+    entitlementsQuery.data?.entitlements.features["feature.view_kanban"] ?? false;
+  const canPlanFuture =
+    entitlementsQuery.data?.entitlements.features["feature.future_plans"] ?? false;
   const [filter, setFilter] = useState<"history" | "future">("history");
   const [page, setPage] = useState(1);
   const pageSize = 21;
@@ -252,6 +258,18 @@ export default function HistoryPage() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const kanbanScrollRef = useRef<HTMLDivElement | null>(null);
   const loadingRef = useRef(false);
+
+  useEffect(() => {
+    if (!canViewKanban && view === "kanban") {
+      setView("listview");
+    }
+  }, [canViewKanban, view]);
+
+  useEffect(() => {
+    if (!canPlanFuture && filter !== "history") {
+      setFilter("history");
+    }
+  }, [canPlanFuture, filter]);
   const scrollTickingRef = useRef(false);
   const lastPrevRef = useRef<string | null>(null);
   const lastNextRef = useRef<string | null>(null);
@@ -883,7 +901,16 @@ export default function HistoryPage() {
           >
             <TabsList>
               <TabsTrigger value="history">History</TabsTrigger>
-              <TabsTrigger value="future">Future</TabsTrigger>
+              <TabsTrigger value="future" disabled={!canPlanFuture}>
+                <span className="flex items-center gap-2">
+                  Future
+                  {!canPlanFuture && (
+                    <Badge variant="outline" className="text-[10px]">
+                      Upgrade
+                    </Badge>
+                  )}
+                </span>
+              </TabsTrigger>
             </TabsList>
           </Tabs>
         ) : (
@@ -921,22 +948,31 @@ export default function HistoryPage() {
             </Button>
           </div>
         )}
-          <div className="flex items-center gap-2">
-            <Button
-              variant={view === "listview" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("listview")}
-            >
-              List view
-            </Button>
-            <Button
-              variant={view === "kanban" ? "default" : "outline"}
-              size="sm"
-              onClick={() => setView("kanban")}
-            >
+        <div className="flex items-center gap-2">
+          <Button
+            variant={view === "listview" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setView("listview")}
+          >
+            List view
+          </Button>
+          <Button
+            variant={view === "kanban" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setView("kanban")}
+            disabled={!canViewKanban}
+            title={!canViewKanban ? "Upgrade to unlock Kanban view" : undefined}
+          >
+            <span className="flex items-center gap-2">
               Kanban
-            </Button>
-          </div>
+              {!canViewKanban && (
+                <Badge variant="outline" className="text-[10px]">
+                  Upgrade
+                </Badge>
+              )}
+            </span>
+          </Button>
+        </div>
         </div>
       </div>
 

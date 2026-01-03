@@ -20,6 +20,7 @@ db.exec(`
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     name TEXT NOT NULL,
+    is_admin INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL
   );
 
@@ -186,6 +187,26 @@ db.exec(`
     created_at TEXT NOT NULL,
     UNIQUE(workspace_id, name),
     FOREIGN KEY(workspace_id) REFERENCES workspaces(id) ON DELETE CASCADE
+  );
+
+  CREATE TABLE IF NOT EXISTS subscription_plans (
+    key TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    price_monthly INTEGER NOT NULL DEFAULT 0,
+    features_json TEXT NOT NULL,
+    limits_json TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS user_subscriptions (
+    user_id TEXT PRIMARY KEY,
+    plan_key TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY(plan_key) REFERENCES subscription_plans(key) ON DELETE CASCADE
   );
 `);
 
@@ -361,6 +382,13 @@ if (categoriesColumns.length === 0) {
   db.exec("ALTER TABLE categories ADD COLUMN color TEXT NOT NULL DEFAULT '#64748b'");
 }
 
+const userColumns = db
+  .prepare("PRAGMA table_info(users)")
+  .all() as Array<{ name: string }>;
+if (!userColumns.some((column) => column.name === "is_admin")) {
+  db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0");
+}
+
 const subtaskColumns = db
   .prepare("PRAGMA table_info(task_subtasks)")
   .all() as Array<{ name: string }>;
@@ -376,3 +404,86 @@ if (!subtaskColumns.some((column) => column.name === "start_time")) {
 if (!subtaskColumns.some((column) => column.name === "end_time")) {
   db.exec("ALTER TABLE task_subtasks ADD COLUMN end_time TEXT");
 }
+
+const now = () => new Date().toISOString();
+const planDefaults = [
+  {
+    key: "free",
+    name: "Free",
+    price_monthly: 0,
+    features: {
+      "feature.ai_assistant": false,
+      "feature.due_dates": false,
+      "feature.view_timeline": false,
+      "feature.view_kanban": false,
+      "feature.future_plans": false,
+      "feature.integrations": false,
+    },
+    limits: {
+      "limit.personal_workspaces": 1,
+      "limit.organizations": 1,
+      "limit.org_workspaces_per_org": 1,
+      "limit.categories_per_workspace": 5,
+      "limit.org_members": 3,
+    },
+  },
+  {
+    key: "pro",
+    name: "Pro",
+    price_monthly: 1200,
+    features: {
+      "feature.ai_assistant": true,
+      "feature.due_dates": true,
+      "feature.view_timeline": true,
+      "feature.view_kanban": true,
+      "feature.future_plans": true,
+      "feature.integrations": true,
+    },
+    limits: {
+      "limit.personal_workspaces": 5,
+      "limit.organizations": 3,
+      "limit.org_workspaces_per_org": 5,
+      "limit.categories_per_workspace": 25,
+      "limit.org_members": 25,
+    },
+  },
+  {
+    key: "enterprise",
+    name: "Enterprise",
+    price_monthly: 5000,
+    features: {
+      "feature.ai_assistant": true,
+      "feature.due_dates": true,
+      "feature.view_timeline": true,
+      "feature.view_kanban": true,
+      "feature.future_plans": true,
+      "feature.integrations": true,
+    },
+    limits: {
+      "limit.personal_workspaces": 999,
+      "limit.organizations": 999,
+      "limit.org_workspaces_per_org": 999,
+      "limit.categories_per_workspace": 999,
+      "limit.org_members": 999,
+    },
+  },
+] as const;
+
+planDefaults.forEach((plan) => {
+  const existing = db
+    .prepare("SELECT key FROM subscription_plans WHERE key = ?")
+    .get(plan.key) as { key: string } | undefined;
+  if (!existing) {
+    db.prepare(
+      "INSERT INTO subscription_plans (key, name, price_monthly, features_json, limits_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    ).run(
+      plan.key,
+      plan.name,
+      plan.price_monthly,
+      JSON.stringify(plan.features),
+      JSON.stringify(plan.limits),
+      now(),
+      now()
+    );
+  }
+});

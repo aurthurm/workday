@@ -11,6 +11,8 @@ import { randomUUID } from "crypto";
 import { parseJson, nameSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 export async function GET() {
   const session = await getSession();
@@ -52,6 +54,18 @@ export async function POST(request: Request) {
   }
   const name = parsed.data.name;
   const type = parsed.data.type ?? "organization";
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin && type === "personal") {
+    const limit = limitValue(entitlements, "limit.personal_workspaces");
+    const personalCount = db
+      .prepare(
+        "SELECT COUNT(*) as count FROM memberships m JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = ? AND w.type = 'personal'"
+      )
+      .get(session.userId) as { count: number };
+    if (personalCount.count >= limit) {
+      return limitReached("limit.personal_workspaces", limit);
+    }
+  }
   if (type !== "personal") {
     const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
     if (!active || active.membership.role !== "admin") {

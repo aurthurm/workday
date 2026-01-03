@@ -6,6 +6,8 @@ import { createWorkspace, getOrgMembership } from "@/lib/data";
 import { parseJson, nameSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 export async function GET(
   _request: Request,
@@ -51,6 +53,17 @@ export async function POST(
   const membership = getOrgMembership(session.userId, id);
   if (!membership || !["owner", "admin"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin) {
+    const limit = limitValue(entitlements, "limit.org_workspaces_per_org");
+    const count = db
+      .prepare("SELECT COUNT(*) as count FROM workspaces WHERE org_id = ?")
+      .get(id) as { count: number };
+    if (count.count >= limit) {
+      return limitReached("limit.org_workspaces_per_org", limit);
+    }
   }
 
   const parsed = await parseJson(

@@ -46,12 +46,42 @@ export function createUser(params: {
   email: string;
   name: string;
   passwordHash: string;
+  isAdmin?: boolean;
 }) {
   const id = randomUUID();
   db.prepare(
-    "INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)"
-  ).run(id, params.email, params.name, params.passwordHash, now());
+    "INSERT INTO users (id, email, name, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(
+    id,
+    params.email,
+    params.name,
+    params.passwordHash,
+    params.isAdmin ? 1 : 0,
+    now()
+  );
   return id;
+}
+
+export function getUserIsAdmin(userId: string) {
+  const row = db
+    .prepare("SELECT is_admin FROM users WHERE id = ?")
+    .get(userId) as { is_admin: number } | undefined;
+  return Boolean(row?.is_admin);
+}
+
+export function getUserPlanKey(userId: string) {
+  const row = db
+    .prepare("SELECT plan_key FROM user_subscriptions WHERE user_id = ?")
+    .get(userId) as { plan_key: string } | undefined;
+  return row?.plan_key ?? "free";
+}
+
+export function setUserPlan(userId: string, planKey: string) {
+  db.prepare(
+    `INSERT INTO user_subscriptions (user_id, plan_key, status, created_at, updated_at)
+     VALUES (?, ?, 'active', ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET plan_key = excluded.plan_key, updated_at = excluded.updated_at`
+  ).run(userId, planKey, now(), now());
 }
 
 export function createWorkspace(params: {

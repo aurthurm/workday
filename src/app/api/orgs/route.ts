@@ -8,6 +8,8 @@ import {
   createWorkspace,
   listOrganizationsForUser,
 } from "@/lib/data";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 import { parseJson, nameSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
@@ -32,6 +34,19 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin) {
+    const limit = limitValue(entitlements, "limit.organizations");
+    const orgCount = db
+      .prepare(
+        "SELECT COUNT(*) as count FROM org_members WHERE user_id = ? AND status = 'active'"
+      )
+      .get(session.userId) as { count: number };
+    if (orgCount.count >= limit) {
+      return limitReached("limit.organizations", limit);
+    }
   }
 
   const parsed = await parseJson(

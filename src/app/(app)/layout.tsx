@@ -7,6 +7,7 @@ import { ThemeSync } from "@/components/theme-sync";
 import { MobileHeader } from "@/components/mobile-header";
 import { MobileNav } from "@/components/mobile-nav";
 import { SkipLinks, LiveRegion } from "@/components/accessibility";
+import { UpgradePrompt } from "@/components/upgrade-prompt";
 
 export default async function AppLayout({
   children,
@@ -25,6 +26,7 @@ export default async function AppLayout({
       <ThemeSync />
       <SkipLinks />
       <LiveRegion />
+      <UpgradePrompt />
 
       {/* Mobile Header - Only on mobile */}
       <MobileHeader

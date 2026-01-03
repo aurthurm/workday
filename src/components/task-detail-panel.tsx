@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 const getCsrfToken = () =>
   document.cookie
@@ -101,6 +102,9 @@ export function TaskDetailPanel({
   readOnly = false,
   onAddComment,
 }: TaskDetailPanelProps) {
+  const entitlementsQuery = useEntitlements();
+  const dueDatesEnabled =
+    entitlementsQuery.data?.entitlements.features["feature.due_dates"] ?? false;
   const [subtaskDraft, setSubtaskDraft] = useState("");
   const [commentDraft, setCommentDraft] = useState("");
   const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
@@ -117,6 +121,12 @@ export function TaskDetailPanel({
       attachmentInputRef.current.value = "";
     }
   }, [task.id]);
+
+  useEffect(() => {
+    if (!dueDatesEnabled && activeHeaderControl === "due") {
+      setActiveHeaderControl(null);
+    }
+  }, [dueDatesEnabled, activeHeaderControl]);
 
   const emitUpdated = () => {
     onUpdated?.();
@@ -265,18 +275,22 @@ export function TaskDetailPanel({
             >
               <CheckCircle2 className="h-4 w-4" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() =>
-                setActiveHeaderControl((prev) => (prev === "due" ? null : "due"))
-              }
-              disabled={isLocked}
-              aria-label="Edit due date"
-              title="Due date"
-            >
-              <Calendar className="h-4 w-4" />
-            </Button>
+            {dueDatesEnabled && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() =>
+                  setActiveHeaderControl((prev) =>
+                    prev === "due" ? null : "due"
+                  )
+                }
+                disabled={isLocked}
+                aria-label="Edit due date"
+                title="Due date"
+              >
+                <Calendar className="h-4 w-4" />
+              </Button>
+            )}
             <Button
               size="icon"
               variant="ghost"
@@ -387,7 +401,7 @@ export function TaskDetailPanel({
               </Select>
             </div>
           )}
-          {activeHeaderControl === "due" && (
+          {activeHeaderControl === "due" && dueDatesEnabled && (
             <div className="flex items-center gap-3">
               <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
                 Due date

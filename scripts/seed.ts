@@ -6,6 +6,7 @@ import {
   createUser,
   createWorkspace,
   getUserByEmail,
+  setUserPlan,
 } from "../src/lib/data";
 
 const now = () => new Date().toISOString();
@@ -17,11 +18,20 @@ async function seed() {
     return;
   }
 
+  const existingAdmin = db
+    .prepare("SELECT id FROM users WHERE is_admin = 1 LIMIT 1")
+    .get() as { id: string } | undefined;
+  if (existingAdmin) {
+    console.log("Admin user already exists.");
+    return;
+  }
+
   const passwordHash = await bcrypt.hash("password123", 10);
   const adminId = createUser({
     email: "admin@workday.local",
     name: "Avery Admin",
     passwordHash,
+    isAdmin: true,
   });
   const supervisorId = createUser({
     email: "supervisor@workday.local",
@@ -33,6 +43,9 @@ async function seed() {
     name: "Riley Member",
     passwordHash,
   });
+  setUserPlan(adminId, "enterprise");
+  setUserPlan(supervisorId, "free");
+  setUserPlan(memberId, "free");
 
   const workspaceId = createWorkspace({
     name: "Workday Demo Org",

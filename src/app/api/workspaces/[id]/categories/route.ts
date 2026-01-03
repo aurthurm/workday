@@ -6,6 +6,8 @@ import { getMembershipForUser, getOrgMembership, getWorkspaceById } from "@/lib/
 import { parseJson, parseSearchParams, categorySchema, colorSchema, uuidSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 const resolveRole = (workspaceId: string, orgId: string | null, userId: string) => {
   const membership = getMembershipForUser(userId, workspaceId);
@@ -79,6 +81,17 @@ export async function POST(
   );
   if (!canAccess || role === "member") {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin) {
+    const limit = limitValue(entitlements, "limit.categories_per_workspace");
+    const count = db
+      .prepare("SELECT COUNT(*) as count FROM categories WHERE workspace_id = ?")
+      .get(workspace.id) as { count: number };
+    if (count.count >= limit) {
+      return limitReached("limit.categories_per_workspace", limit);
+    }
   }
 
   const parsed = await parseJson(

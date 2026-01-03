@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/select";
 import { Repeat, CalendarClock, ListChecks, Trash2, Clock } from "lucide-react";
 import { TaskDetailPanel } from "@/components/task-detail-panel";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 type TaskItem = {
   id: string;
@@ -97,6 +98,9 @@ export function TaskListItem({
   dueSoonDays = 3,
   readOnly = false,
 }: TaskListItemProps) {
+  const entitlementsQuery = useEntitlements();
+  const dueDatesEnabled =
+    entitlementsQuery.data?.entitlements.features["feature.due_dates"] ?? false;
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
   const [isEditingRecurrence, setIsEditingRecurrence] = useState(false);
@@ -135,7 +139,7 @@ export function TaskListItem({
     readOnly || ["done", "cancelled", "skipped"].includes(task.status);
   const canDrag = !isLocked && draggable && !isEditingTime;
   const dueBadge = (() => {
-    if (!task.due_date) return null;
+    if (!dueDatesEnabled || !task.due_date) return null;
     const due = new Date(task.due_date);
     if (Number.isNaN(due.getTime())) return null;
     const today = new Date();

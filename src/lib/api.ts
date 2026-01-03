@@ -64,6 +64,15 @@ export async function apiFetch<T>(
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       const message = getErrorMessage(response.status, payload?.error);
+      if (
+        typeof window !== "undefined" &&
+        (payload?.code === "FEATURE_NOT_AVAILABLE" ||
+          payload?.code === "LIMIT_REACHED")
+      ) {
+        window.dispatchEvent(
+          new CustomEvent("upgrade:required", { detail: payload })
+        );
+      }
       throw new ApiError(message, response.status, payload?.code);
     }
 

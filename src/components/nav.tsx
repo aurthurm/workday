@@ -16,7 +16,6 @@ import {
   HelpCircle,
   UserCircle,
 } from "lucide-react";
-import { SettingsModal } from "@/components/settings-modal";
 
 const navItems = [
   { href: "/today", label: "Today", icon: CalendarDays },
@@ -55,25 +54,14 @@ export function SidebarNav({ collapsed = false }: { collapsed?: boolean }) {
 export function UserMenu({
   name,
   collapsed = false,
+  onOpenSettings,
 }: {
   name: string;
   collapsed?: boolean;
+  onOpenSettings: (tab: "profile" | "general" | "subscription") => void;
 }) {
   const router = useRouter();
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<
-    | "profile"
-    | "subscription"
-    | "general"
-    | "invitations"
-    | "workspaces"
-    | "organizations"
-    | "categories"
-    | "integrations"
-    | "ai"
-    | "due_dates"
-  >("profile");
 
   return (
     <div className="flex flex-col gap-4">
@@ -100,8 +88,7 @@ export function UserMenu({
               variant="ghost"
               className="w-full justify-start"
               onClick={() => {
-                setSettingsTab("general");
-                setIsSettingsOpen(true);
+                onOpenSettings("general");
                 setIsUserMenuOpen(false);
               }}
             >
@@ -112,8 +99,7 @@ export function UserMenu({
               variant="ghost"
               className="w-full justify-start"
               onClick={() => {
-                setSettingsTab("profile");
-                setIsSettingsOpen(true);
+                onOpenSettings("profile");
                 setIsUserMenuOpen(false);
               }}
             >
@@ -142,13 +128,6 @@ export function UserMenu({
           </div>
         )}
       </div>
-
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        activeTab={settingsTab}
-        onTabChange={setSettingsTab}
-      />
     </div>
   );
 }

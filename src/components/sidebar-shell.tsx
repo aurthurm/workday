@@ -5,8 +5,17 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/api";
 import { SidebarNav, UserMenu } from "@/components/nav";
 import { Button } from "@/components/ui/button";
-import { PanelLeftClose, PanelLeftOpen, ChevronsUpDown, Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronsUpDown,
+  Check,
+  Sparkles,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SettingsModal } from "@/components/settings-modal";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 type SidebarShellProps = {
   name: string;
@@ -29,6 +38,23 @@ type WorkspaceResponse = {
 export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [workspaceSwitcherOpen, setWorkspaceSwitcherOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<
+    | "profile"
+    | "subscription"
+    | "general"
+    | "invitations"
+    | "workspaces"
+    | "organizations"
+    | "categories"
+    | "integrations"
+    | "ai"
+    | "due_dates"
+  >("profile");
+  const entitlementsQuery = useEntitlements();
+  const planKey = entitlementsQuery.data?.entitlements.planKey ?? "free";
+  const isAdmin = Boolean(entitlementsQuery.data?.entitlements.isAdmin);
+  const showUpgrade = !isAdmin && planKey === "free";
   const queryClient = useQueryClient();
 
   const { data, refetch } = useQuery({
@@ -78,8 +104,22 @@ export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
             )}
           </Button>
           {!collapsed && (
-            <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               Workday
+              {showUpgrade && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSettingsTab("subscription");
+                    setIsSettingsOpen(true);
+                  }}
+                  aria-label="Open subscription settings"
+                >
+                  <Badge variant="outline" className="px-2 py-0 text-[10px]">
+                    Upgrade
+                  </Badge>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -155,7 +195,32 @@ export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
         <SidebarNav collapsed={collapsed} />
 
         <div className="mt-auto border-t border-border/70 pt-4">
-          <UserMenu name={name} collapsed={collapsed} />
+          {showUpgrade && (
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "mb-3 w-full justify-center gap-2 rounded-xl border-border/70",
+                collapsed && "h-10 w-10 p-0"
+              )}
+              onClick={() => {
+                setSettingsTab("subscription");
+                setIsSettingsOpen(true);
+              }}
+              title={collapsed ? "Upgrade" : undefined}
+            >
+              <Sparkles className="h-4 w-4" />
+              {!collapsed && <span>Upgrade</span>}
+            </Button>
+          )}
+          <UserMenu
+            name={name}
+            collapsed={collapsed}
+            onOpenSettings={(tab) => {
+              setSettingsTab(tab);
+              setIsSettingsOpen(true);
+            }}
+          />
         </div>
       </div>
 
@@ -166,6 +231,13 @@ export function SidebarShell({ name, workspaceName, role }: SidebarShellProps) {
           onClick={() => setWorkspaceSwitcherOpen(false)}
         />
       )}
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        activeTab={settingsTab}
+        onTabChange={setSettingsTab}
+      />
     </aside>
   );
 }

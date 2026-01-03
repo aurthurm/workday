@@ -6,6 +6,8 @@ import { addOrgMember, getDefaultOrgWorkspace } from "@/lib/data";
 import { parseJson } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 const now = () => new Date().toISOString();
 
@@ -53,6 +55,24 @@ export async function POST(request: Request) {
       { error: "Invite email does not match your account." },
       { status: 403 }
     );
+  }
+
+  const owner = db
+    .prepare(
+      "SELECT user_id FROM org_members WHERE org_id = ? AND role = 'owner' AND status = 'active' ORDER BY created_at LIMIT 1"
+    )
+    .get(invite.org_id) as { user_id: string } | undefined;
+  const limitEntitlements = getEntitlements(owner?.user_id ?? session.userId);
+  if (!limitEntitlements.isAdmin) {
+    const limit = limitValue(limitEntitlements, "limit.org_members");
+    const memberCount = db
+      .prepare(
+        "SELECT COUNT(*) as count FROM org_members WHERE org_id = ? AND status != 'disabled'"
+      )
+      .get(invite.org_id) as { count: number };
+    if (memberCount.count >= limit) {
+      return limitReached("limit.org_members", limit);
+    }
   }
 
   addOrgMember({

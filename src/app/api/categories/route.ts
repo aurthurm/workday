@@ -6,6 +6,8 @@ import { getActiveWorkspace } from "@/lib/data";
 import { parseJson, parseSearchParams, categorySchema, colorSchema, uuidSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 export async function GET() {
   const session = await getSession();
@@ -40,6 +42,17 @@ export async function POST(request: Request) {
 
   if (active.membership.role === "member") {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin) {
+    const limit = limitValue(entitlements, "limit.categories_per_workspace");
+    const count = db
+      .prepare("SELECT COUNT(*) as count FROM categories WHERE workspace_id = ?")
+      .get(active.workspace.id) as { count: number };
+    if (count.count >= limit) {
+      return limitReached("limit.categories_per_workspace", limit);
+    }
   }
 
   const parsed = await parseJson(

@@ -6,6 +6,8 @@ import { getOrgMembership } from "@/lib/data";
 import { parseJson, emailSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 const now = () => new Date().toISOString();
 
@@ -46,6 +48,24 @@ export async function POST(
   const membership = getOrgMembership(session.userId, id);
   if (!membership || !["owner", "admin"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin) {
+    const limit = limitValue(entitlements, "limit.org_members");
+    const memberCount = db
+      .prepare(
+        "SELECT COUNT(*) as count FROM org_members WHERE org_id = ? AND status != 'disabled'"
+      )
+      .get(id) as { count: number };
+    const inviteCount = db
+      .prepare(
+        "SELECT COUNT(*) as count FROM org_invites WHERE org_id = ? AND accepted_at IS NULL"
+      )
+      .get(id) as { count: number };
+    if (memberCount.count + inviteCount.count >= limit) {
+      return limitReached("limit.org_members", limit);
+    }
   }
 
   const parsed = await parseJson(

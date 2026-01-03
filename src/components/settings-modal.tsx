@@ -15,7 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import Swal from "sweetalert2";
-import { ArrowRightLeft, Trash2 } from "lucide-react";
+import { ArrowRightLeft, Trash2, Check, Minus } from "lucide-react";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 type SettingsTab =
   | "profile"
@@ -118,6 +119,16 @@ type WorkspacesResponse = {
   }>;
 };
 
+type PlanResponse = {
+  plans: Array<{
+    key: "free" | "pro" | "enterprise";
+    name: string;
+    price_monthly: number;
+    features: Record<string, boolean>;
+    limits: Record<string, number>;
+  }>;
+};
+
 type OrgWorkspacesResponse = {
   workspaces: Array<{
     id: string;
@@ -156,6 +167,54 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const [isMounted, setIsMounted] = useState(false);
   const queryClient = useQueryClient();
+  const entitlementsQuery = useEntitlements(isOpen);
+  const isAdmin = Boolean(entitlementsQuery.data?.entitlements?.isAdmin);
+  const formatEntitlementKey = (value: string) =>
+    value.replace(/^[^.]+\./, "").replace(/_/g, " ");
+  const canUseAi =
+    entitlementsQuery.data?.entitlements.features["feature.ai_assistant"] ?? false;
+  const canUseIntegrations =
+    entitlementsQuery.data?.entitlements.features["feature.integrations"] ?? false;
+  const canUseDueDates =
+    entitlementsQuery.data?.entitlements.features["feature.due_dates"] ?? false;
+  const usage = entitlementsQuery.data?.usage ?? {};
+  const limits = entitlementsQuery.data?.entitlements.limits ?? {};
+  const isLimitReached = (key: string) =>
+    typeof limits[key] === "number" &&
+    typeof usage[key.replace("limit.", "")] === "number" &&
+    usage[key.replace("limit.", "")] >= limits[key];
+  const orgLimitReached = !isAdmin && isLimitReached("limit.organizations");
+  const personalWorkspaceLimitReached =
+    !isAdmin && isLimitReached("limit.personal_workspaces");
+
+  type PlanDraft = {
+    key: "free" | "pro" | "enterprise";
+    name: string;
+    price_monthly: number;
+    features: Record<string, boolean>;
+    limits: Record<string, number>;
+  };
+  const [planDrafts, setPlanDrafts] = useState<Record<string, PlanDraft>>({});
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+
+  const UpgradeNotice = ({ featureLabel }: { featureLabel: string }) => (
+    <Card>
+      <CardHeader>
+        <CardTitle>{featureLabel} requires an upgrade</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          This feature is not available on your current plan.
+        </p>
+        <Button
+          onClick={() => onTabChange("subscription")}
+          className="w-fit"
+        >
+          View plans
+        </Button>
+      </CardContent>
+    </Card>
+  );
 
   useEffect(() => {
     setIsMounted(true);
@@ -190,6 +249,54 @@ export function SettingsModal({
     queryFn: () => apiFetch<WorkspacesResponse>("/api/workspaces"),
     enabled: isOpen,
   });
+
+  const plansQuery = useQuery({
+    queryKey: ["subscription-plans"],
+    queryFn: () => apiFetch<PlanResponse>("/api/subscriptions/plans"),
+    enabled: isOpen && isAdmin,
+  });
+
+  const catalogQuery = useQuery({
+    queryKey: ["subscription-catalog"],
+    queryFn: () => apiFetch<PlanResponse>("/api/subscriptions/catalog"),
+    enabled: isOpen && !isAdmin,
+  });
+
+  useEffect(() => {
+    if (!plansQuery.data?.plans) return;
+    const nextDrafts: Record<string, PlanDraft> = {};
+    plansQuery.data.plans.forEach((plan) => {
+      nextDrafts[plan.key] = {
+        key: plan.key,
+        name: plan.name,
+        price_monthly: plan.price_monthly,
+        features: { ...plan.features },
+        limits: { ...plan.limits },
+      };
+    });
+    setPlanDrafts(nextDrafts);
+  }, [plansQuery.data?.plans]);
+
+  useEffect(() => {
+    if (!isOpen || isAdmin) return;
+    if (activeTab === "ai" && !canUseAi) {
+      onTabChange("subscription");
+    }
+    if (activeTab === "integrations" && !canUseIntegrations) {
+      onTabChange("subscription");
+    }
+    if (activeTab === "due_dates" && !canUseDueDates) {
+      onTabChange("subscription");
+    }
+  }, [
+    activeTab,
+    canUseAi,
+    canUseDueDates,
+    canUseIntegrations,
+    isAdmin,
+    isOpen,
+    onTabChange,
+  ]);
 
   const orgWorkspacesQueries = useQueries({
     queries: orgs.map((org) => ({
@@ -319,6 +426,13 @@ export function SettingsModal({
     enabled: isOpen,
   });
 
+  const orgMembersCount = membersQuery.data?.members?.length ?? 0;
+  const orgInvitesCount = invitesQuery.data?.invites?.length ?? 0;
+  const orgMemberLimitReached =
+    !isAdmin &&
+    typeof limits["limit.org_members"] === "number" &&
+    orgMembersCount + orgInvitesCount >= limits["limit.org_members"];
+
   useEffect(() => {
     if (!selectedOrgId) return;
     membersQuery.refetch();
@@ -412,6 +526,36 @@ export function SettingsModal({
       await queryClient.invalidateQueries({ queryKey: ["settings"] });
     },
     onError: (error: Error) => setSettingsFeedback(error.message),
+  });
+
+  const updatePlanMutation = useMutation({
+    mutationFn: (payload: PlanDraft) =>
+      apiFetch("/api/subscriptions/plans", {
+        method: "PUT",
+        body: {
+          key: payload.key,
+          name: payload.name,
+          priceMonthly: payload.price_monthly,
+          features: payload.features,
+          limits: payload.limits,
+        },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["subscription-plans"] });
+    },
+  });
+
+  const subscribeMutation = useMutation({
+    mutationFn: (planKey: "free" | "pro" | "enterprise") =>
+      apiFetch("/api/subscriptions/subscribe", {
+        method: "POST",
+        body: { planKey },
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["entitlements"] });
+      queryClient.invalidateQueries({ queryKey: ["subscription-catalog"] });
+      setShowPlanPicker(false);
+    },
   });
 
   const [categoryDrafts, setCategoryDrafts] = useState<
@@ -734,8 +878,16 @@ export function SettingsModal({
                       activeTab === "integrations" && "bg-card shadow-inset"
                     )}
                     onClick={() => onTabChange("integrations")}
+                    disabled={!canUseIntegrations && !isAdmin}
                   >
-                    Integrations
+                    <span className="flex items-center justify-between gap-2">
+                      <span>Integrations</span>
+                      {!canUseIntegrations && !isAdmin && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Upgrade
+                        </Badge>
+                      )}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -750,8 +902,16 @@ export function SettingsModal({
                       activeTab === "ai" && "bg-card shadow-inset"
                     )}
                     onClick={() => onTabChange("ai")}
+                    disabled={!canUseAi && !isAdmin}
                   >
-                    AI Assistant
+                    <span className="flex items-center justify-between gap-2">
+                      <span>AI Assistant</span>
+                      {!canUseAi && !isAdmin && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Upgrade
+                        </Badge>
+                      )}
+                    </span>
                   </button>
                   <button
                     className={cn(
@@ -759,8 +919,16 @@ export function SettingsModal({
                       activeTab === "due_dates" && "bg-card shadow-inset"
                     )}
                     onClick={() => onTabChange("due_dates")}
+                    disabled={!canUseDueDates && !isAdmin}
                   >
-                    Due dates
+                    <span className="flex items-center justify-between gap-2">
+                      <span>Due dates</span>
+                      {!canUseDueDates && !isAdmin && (
+                        <Badge variant="outline" className="text-[10px]">
+                          Upgrade
+                        </Badge>
+                      )}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -941,15 +1109,309 @@ export function SettingsModal({
                   <CardContent className="space-y-3">
                     <div className="rounded-xl border border-border/70 bg-muted/60 p-4">
                       <p className="text-sm font-semibold text-foreground">
-                        Free
+                        {entitlementsQuery.data?.entitlements?.planName ?? "Free"}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        Basic access to daily planning and collaboration.
+                        {entitlementsQuery.data?.entitlements?.isAdmin
+                          ? "Admin access with all features enabled."
+                          : "Plan features and limits apply to your account."}
                       </p>
                     </div>
-                    <Button>Upgrade to Pro</Button>
+                    {!isAdmin && (
+                      <Button onClick={() => setShowPlanPicker(true)}>
+                        Manage plan
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
+                {!isAdmin && showPlanPicker && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Choose a plan</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {catalogQuery.isLoading && (
+                        <p className="text-sm text-muted-foreground">
+                          Loading plans...
+                        </p>
+                      )}
+                      {catalogQuery.data?.plans?.length ? (
+                        (() => {
+                          const plans = catalogQuery.data?.plans ?? [];
+                          const activeKey =
+                            entitlementsQuery.data?.entitlements.planKey ?? "free";
+                          const featureKeys = Array.from(
+                            new Set(
+                              plans.flatMap((plan) => Object.keys(plan.features))
+                            )
+                          ).sort();
+                          const limitKeys = Array.from(
+                            new Set(
+                              plans.flatMap((plan) => Object.keys(plan.limits))
+                            )
+                          ).sort();
+                          return (
+                            <div className="overflow-x-auto rounded-xl border border-border/70">
+                              <div
+                                className="grid min-w-[520px]"
+                                style={{
+                                  gridTemplateColumns: `200px repeat(${plans.length}, minmax(140px, 1fr))`,
+                                }}
+                              >
+                                <div className="flex items-center justify-center border-b border-border/70 bg-muted/40 px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                  Plan
+                                </div>
+                                {plans.map((plan) => (
+                                  <div
+                                    key={plan.key}
+                                    className="flex flex-col items-center justify-center border-b border-border/70 bg-muted/40 px-3 py-3 text-center"
+                                  >
+                                    <p className="text-sm font-semibold text-foreground">
+                                      {plan.name}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      ${plan.price_monthly}/month
+                                    </p>
+                                  </div>
+                                ))}
+
+                                {featureKeys.map((key) => (
+                                  <div key={`${key}-row`} className="contents">
+                                    <div className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                                      {formatEntitlementKey(key)}
+                                    </div>
+                                    {plans.map((plan) => {
+                                      const enabled = Boolean(plan.features[key]);
+                                      return (
+                                        <div
+                                          key={`${plan.key}-${key}`}
+                                          className="flex items-center justify-center border-b border-border/60 px-3 py-2 text-sm"
+                                        >
+                                          {enabled ? (
+                                            <Check className="h-4 w-4 text-emerald-600" />
+                                          ) : (
+                                            <Minus className="h-4 w-4 text-muted-foreground" />
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ))}
+
+                                {limitKeys.map((key) => (
+                                  <div key={`${key}-row`} className="contents">
+                                    <div className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">
+                                      {formatEntitlementKey(key)}
+                                    </div>
+                                    {plans.map((plan) => (
+                                      <div
+                                        key={`${plan.key}-${key}`}
+                                        className="flex items-center justify-center border-b border-border/60 px-3 py-2 text-xs"
+                                      >
+                                        {plan.limits[key] ?? "-"}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ))}
+
+                                <div className="flex items-center justify-center px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+                                  Action
+                                </div>
+                                {plans.map((plan) => {
+                                  const isActive = plan.key === activeKey;
+                                  const currentPlan =
+                                    plans.find((item) => item.key === activeKey) ??
+                                    plan;
+                                  const isUpgrade =
+                                    plan.price_monthly > currentPlan.price_monthly;
+                                  const actionLabel = isActive
+                                    ? "Current plan"
+                                    : isUpgrade
+                                    ? "Upgrade"
+                                    : "Downgrade";
+                                  return (
+                                    <div
+                                      key={`${plan.key}-action`}
+                                      className="px-3 py-3"
+                                    >
+                                      <Button
+                                        variant={isActive ? "secondary" : "default"}
+                                        disabled={
+                                          isActive || subscribeMutation.isPending
+                                        }
+                                        onClick={() =>
+                                          subscribeMutation.mutate(plan.key)
+                                        }
+                                        className="w-full"
+                                      >
+                                        {actionLabel}
+                                      </Button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : null}
+                      <Button
+                        variant="ghost"
+                        onClick={() => setShowPlanPicker(false)}
+                      >
+                        Close
+                      </Button>
+                    </CardContent>
+                  </Card>
+                )}
+                {isAdmin && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Plan management</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      {plansQuery.isLoading && (
+                        <p className="text-sm text-muted-foreground">
+                          Loading plans...
+                        </p>
+                      )}
+                      {!plansQuery.isLoading &&
+                        plansQuery.data?.plans?.map((plan) => {
+                          const draft = planDrafts[plan.key] ?? plan;
+                          return (
+                            <div
+                              key={plan.key}
+                              className="rounded-2xl border border-border/70 bg-muted/40 p-4"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                  <p className="text-sm font-semibold text-foreground">
+                                    {draft.name}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Key: {draft.key}
+                                  </p>
+                                </div>
+                                <Button
+                                  onClick={() => updatePlanMutation.mutate(draft)}
+                                  disabled={updatePlanMutation.isPending}
+                                >
+                                  {updatePlanMutation.isPending
+                                    ? "Saving..."
+                                    : "Save plan"}
+                                </Button>
+                              </div>
+                              <div className="mt-4 grid gap-3 lg:grid-cols-[180px_1fr]">
+                                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                  Name
+                                </span>
+                                <Input
+                                  value={draft.name}
+                                  onChange={(event) =>
+                                    setPlanDrafts((prev) => ({
+                                      ...prev,
+                                      [plan.key]: {
+                                        ...draft,
+                                        name: event.target.value,
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="mt-3 grid gap-3 lg:grid-cols-[180px_1fr]">
+                                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                  Monthly price
+                                </span>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={draft.price_monthly}
+                                  onChange={(event) =>
+                                    setPlanDrafts((prev) => ({
+                                      ...prev,
+                                      [plan.key]: {
+                                        ...draft,
+                                        price_monthly: Number(event.target.value),
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="mt-4 grid gap-3 lg:grid-cols-[180px_1fr]">
+                                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                  Features
+                                </span>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {Object.entries(draft.features).map(
+                                    ([key, value]) => (
+                                      <label
+                                        key={key}
+                                        className="flex items-center gap-2 text-xs text-muted-foreground"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={value}
+                                          onChange={(event) =>
+                                            setPlanDrafts((prev) => ({
+                                              ...prev,
+                                              [plan.key]: {
+                                                ...draft,
+                                                features: {
+                                                  ...draft.features,
+                                                  [key]: event.target.checked,
+                                                },
+                                              },
+                                            }))
+                                          }
+                                        />
+                                        {formatEntitlementKey(key)}
+                                      </label>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                              <div className="mt-4 grid gap-3 lg:grid-cols-[180px_1fr]">
+                                <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                                  Limits
+                                </span>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                  {Object.entries(draft.limits).map(
+                                    ([key, value]) => (
+                                      <label
+                                        key={key}
+                                        className="flex items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-xs"
+                                      >
+                                        <span className="text-muted-foreground">
+                                          {formatEntitlementKey(key)}
+                                        </span>
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          value={value}
+                                          onChange={(event) =>
+                                            setPlanDrafts((prev) => ({
+                                              ...prev,
+                                              [plan.key]: {
+                                                ...draft,
+                                                limits: {
+                                                  ...draft.limits,
+                                                  [key]: Number(event.target.value),
+                                                },
+                                              },
+                                            }))
+                                          }
+                                          className="h-8 w-24"
+                                        />
+                                      </label>
+                                    )
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </CardContent>
+                  </Card>
+                )}
               </div>
             )}
 
@@ -1272,12 +1734,22 @@ export function SettingsModal({
                         onClick={() => createPersonalWorkspaceMutation.mutate()}
                         disabled={
                           !personalWorkspaceDraft.trim() ||
-                          createPersonalWorkspaceMutation.isPending
+                          createPersonalWorkspaceMutation.isPending ||
+                          personalWorkspaceLimitReached
                         }
                       >
-                        {createPersonalWorkspaceMutation.isPending
-                          ? "Adding..."
-                          : "Add workspace"}
+                        {personalWorkspaceLimitReached ? (
+                          <span className="flex items-center gap-2">
+                            Upgrade to add
+                            <Badge variant="outline" className="text-[10px]">
+                              Upgrade
+                            </Badge>
+                          </span>
+                        ) : createPersonalWorkspaceMutation.isPending ? (
+                          "Adding..."
+                        ) : (
+                          "Add workspace"
+                        )}
                       </Button>
                     </div>
                   </CardContent>
@@ -1286,6 +1758,11 @@ export function SettingsModal({
                 {orgs.map((org) => {
                   const orgWorkspaces = orgWorkspacesById[org.id] ?? [];
                   const draft = orgWorkspaceDrafts[org.id] ?? "";
+                  const orgWorkspaceLimitReached =
+                    !isAdmin &&
+                    typeof limits["limit.org_workspaces_per_org"] === "number" &&
+                    orgWorkspaces.length >=
+                      limits["limit.org_workspaces_per_org"];
                   return (
                     <Card key={org.id}>
                       <CardHeader>
@@ -1442,12 +1919,23 @@ export function SettingsModal({
                               )
                             }
                             disabled={
-                              !draft.trim() || createOrgWorkspaceMutation.isPending
+                              !draft.trim() ||
+                              createOrgWorkspaceMutation.isPending ||
+                              orgWorkspaceLimitReached
                             }
                           >
-                            {createOrgWorkspaceMutation.isPending
-                              ? "Adding..."
-                              : "Add workspace"}
+                            {orgWorkspaceLimitReached ? (
+                              <span className="flex items-center gap-2">
+                                Upgrade to add
+                                <Badge variant="outline" className="text-[10px]">
+                                  Upgrade
+                                </Badge>
+                              </span>
+                            ) : createOrgWorkspaceMutation.isPending ? (
+                              "Adding..."
+                            ) : (
+                              "Add workspace"
+                            )}
                           </Button>
                         </div>
                       </CardContent>
@@ -1514,12 +2002,23 @@ export function SettingsModal({
                     <Button
                       onClick={() => createOrgMutation.mutate()}
                       disabled={
-                        !orgDraft.name.trim() || createOrgMutation.isPending
+                        !orgDraft.name.trim() ||
+                        createOrgMutation.isPending ||
+                        orgLimitReached
                       }
                     >
-                      {createOrgMutation.isPending
-                        ? "Creating..."
-                        : "Create organization"}
+                      {orgLimitReached ? (
+                        <span className="flex items-center gap-2">
+                          Upgrade to add org
+                          <Badge variant="outline" className="text-[10px]">
+                            Upgrade
+                          </Badge>
+                        </span>
+                      ) : createOrgMutation.isPending ? (
+                        "Creating..."
+                      ) : (
+                        "Create organization"
+                      )}
                     </Button>
                   </CardContent>
                 </Card>
@@ -1745,10 +2244,23 @@ export function SettingsModal({
                                         })
                                       }
                                       disabled={
-                                        !selectedOrgId || addMemberMutation.isPending
+                                        !selectedOrgId ||
+                                        addMemberMutation.isPending ||
+                                        orgMemberLimitReached
                                       }
                                     >
-                                      {addMemberMutation.isPending ? "Adding..." : "Add"}
+                                      {orgMemberLimitReached ? (
+                                        <span className="flex items-center gap-2">
+                                          Upgrade
+                                          <Badge variant="outline" className="text-[10px]">
+                                            Upgrade
+                                          </Badge>
+                                        </span>
+                                      ) : addMemberMutation.isPending ? (
+                                        "Adding..."
+                                      ) : (
+                                        "Add"
+                                      )}
                                     </Button>
                                   </div>
                                 ))}
@@ -1802,12 +2314,22 @@ export function SettingsModal({
                               disabled={
                                 !selectedOrgId ||
                                 !inviteDraft.email.trim() ||
-                                inviteMutation.isPending
+                                inviteMutation.isPending ||
+                                orgMemberLimitReached
                               }
                             >
-                              {inviteMutation.isPending
-                                ? "Sending..."
-                                : "Send invite"}
+                              {orgMemberLimitReached ? (
+                                <span className="flex items-center gap-2">
+                                  Upgrade
+                                  <Badge variant="outline" className="text-[10px]">
+                                    Upgrade
+                                  </Badge>
+                                </span>
+                              ) : inviteMutation.isPending ? (
+                                "Sending..."
+                              ) : (
+                                "Send invite"
+                              )}
                             </Button>
                           </div>
                           <div className="mt-3 space-y-2">
@@ -1864,6 +2386,10 @@ export function SettingsModal({
                         categoryData?.categories?.slice().sort((a, b) =>
                           a.name.localeCompare(b.name)
                         ) ?? [];
+                      const categoriesLimitReached =
+                        !isAdmin &&
+                        typeof limits["limit.categories_per_workspace"] === "number" &&
+                        categories.length >= limits["limit.categories_per_workspace"];
                       const role = categoryData?.role ?? "member";
                       const draft = categoryDrafts[workspace.id] ?? {
                         name: "",
@@ -2054,12 +2580,22 @@ export function SettingsModal({
                                 }
                                 disabled={
                                   !draft.name.trim() ||
-                                  createCategoryMutation.isPending
+                                  createCategoryMutation.isPending ||
+                                  categoriesLimitReached
                                 }
                               >
-                                {createCategoryMutation.isPending
-                                  ? "Adding..."
-                                  : "Add category"}
+                                {categoriesLimitReached ? (
+                                  <span className="flex items-center gap-2">
+                                    Upgrade to add
+                                    <Badge variant="outline" className="text-[10px]">
+                                      Upgrade
+                                    </Badge>
+                                  </span>
+                                ) : createCategoryMutation.isPending ? (
+                                  "Adding..."
+                                ) : (
+                                  "Add category"
+                                )}
                               </Button>
                             </div>
                           )}
@@ -2085,6 +2621,10 @@ export function SettingsModal({
                         categoryData?.categories?.slice().sort((a, b) =>
                           a.name.localeCompare(b.name)
                         ) ?? [];
+                      const categoriesLimitReached =
+                        !isAdmin &&
+                        typeof limits["limit.categories_per_workspace"] === "number" &&
+                        categories.length >= limits["limit.categories_per_workspace"];
                       const role = categoryData?.role ?? "member";
                       const draft = categoryDrafts[workspace.id] ?? {
                         name: "",
@@ -2277,12 +2817,22 @@ export function SettingsModal({
                                 }
                                 disabled={
                                   !draft.name.trim() ||
-                                  createCategoryMutation.isPending
+                                  createCategoryMutation.isPending ||
+                                  categoriesLimitReached
                                 }
                               >
-                                {createCategoryMutation.isPending
-                                  ? "Adding..."
-                                  : "Add category"}
+                                {categoriesLimitReached ? (
+                                  <span className="flex items-center gap-2">
+                                    Upgrade to add
+                                    <Badge variant="outline" className="text-[10px]">
+                                      Upgrade
+                                    </Badge>
+                                  </span>
+                                ) : createCategoryMutation.isPending ? (
+                                  "Adding..."
+                                ) : (
+                                  "Add category"
+                                )}
                               </Button>
                             </div>
                           )}
@@ -2300,172 +2850,195 @@ export function SettingsModal({
             )}
 
             {activeTab === "integrations" && (
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-base font-semibold text-foreground">
-                    Integrations
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
-                    Future use. Connect external tools here when available.
-                  </p>
-                </div>
-                <Card>
-                  <CardContent className="p-6 text-sm text-muted-foreground">
-                    Integrations are coming soon.
-                  </CardContent>
-                </Card>
-              </div>
+              <>
+                {(!canUseIntegrations && !isAdmin) ? (
+                  <UpgradeNotice featureLabel="Integrations" />
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-base font-semibold text-foreground">
+                        Integrations
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Future use. Connect external tools here when available.
+                      </p>
+                    </div>
+                    <Card>
+                      <CardContent className="p-6 text-sm text-muted-foreground">
+                        Integrations are coming soon.
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </>
             )}
 
             {activeTab === "ai" && (
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-base font-semibold text-foreground">
-                    AI Assistant
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
-                    Configure how the assistant helps with scheduling.
-                  </p>
-                </div>
-                {settingsFeedback && (
-                  <p className="text-sm text-muted-foreground">{settingsFeedback}</p>
+              <>
+                {(!canUseAi && !isAdmin) ? (
+                  <UpgradeNotice featureLabel="AI Assistant" />
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-base font-semibold text-foreground">
+                        AI Assistant
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Configure how the assistant helps with scheduling.
+                      </p>
+                    </div>
+                    {settingsFeedback && (
+                      <p className="text-sm text-muted-foreground">
+                        {settingsFeedback}
+                      </p>
+                    )}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Preferences</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={settingsDraft.aiConfirm}
+                            onChange={(event) =>
+                              setSettingsDraft((prev) => ({
+                                ...prev,
+                                aiConfirm: event.target.checked,
+                              }))
+                            }
+                          />
+                          Require confirmation before modifying data
+                        </label>
+                        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+                          <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Daily routine
+                          </span>
+                          <Textarea
+                            value={settingsDraft.aiRoutine}
+                            onChange={(event) =>
+                              setSettingsDraft((prev) => ({
+                                ...prev,
+                                aiRoutine: event.target.value,
+                              }))
+                            }
+                            placeholder="Describe your daily routine."
+                          />
+                        </div>
+                        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+                          <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Preferred work hours
+                          </span>
+                          <Input
+                            value={settingsDraft.aiWorkHours}
+                            onChange={(event) =>
+                              setSettingsDraft((prev) => ({
+                                ...prev,
+                                aiWorkHours: event.target.value,
+                              }))
+                            }
+                            placeholder="e.g. 9:00-17:00"
+                          />
+                        </div>
+                        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+                          <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Scheduling preferences
+                          </span>
+                          <Textarea
+                            value={settingsDraft.aiPreferences}
+                            onChange={(event) =>
+                              setSettingsDraft((prev) => ({
+                                ...prev,
+                                aiPreferences: event.target.value,
+                              }))
+                            }
+                            placeholder="Preferences for how tasks should be arranged."
+                          />
+                        </div>
+                        <Button
+                          onClick={() =>
+                            updateSettingsMutation.mutate({
+                              aiConfirm: settingsDraft.aiConfirm,
+                              aiRoutine: settingsDraft.aiRoutine,
+                              aiWorkHours: settingsDraft.aiWorkHours,
+                              aiPreferences: settingsDraft.aiPreferences,
+                            })
+                          }
+                          disabled={updateSettingsMutation.isPending}
+                        >
+                          {updateSettingsMutation.isPending
+                            ? "Saving..."
+                            : "Save AI settings"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
                 )}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Preferences</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={settingsDraft.aiConfirm}
-                        onChange={(event) =>
-                          setSettingsDraft((prev) => ({
-                            ...prev,
-                            aiConfirm: event.target.checked,
-                          }))
-                        }
-                      />
-                      Require confirmation before modifying data
-                    </label>
-                    <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
-                      <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Daily routine
-                      </span>
-                      <Textarea
-                        value={settingsDraft.aiRoutine}
-                        onChange={(event) =>
-                          setSettingsDraft((prev) => ({
-                            ...prev,
-                            aiRoutine: event.target.value,
-                          }))
-                        }
-                        placeholder="Describe your daily routine."
-                      />
-                    </div>
-                    <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
-                      <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Preferred work hours
-                      </span>
-                      <Input
-                        value={settingsDraft.aiWorkHours}
-                        onChange={(event) =>
-                          setSettingsDraft((prev) => ({
-                            ...prev,
-                            aiWorkHours: event.target.value,
-                          }))
-                        }
-                        placeholder="e.g. 9:00-17:00"
-                      />
-                    </div>
-                    <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
-                      <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Scheduling preferences
-                      </span>
-                      <Textarea
-                        value={settingsDraft.aiPreferences}
-                        onChange={(event) =>
-                          setSettingsDraft((prev) => ({
-                            ...prev,
-                            aiPreferences: event.target.value,
-                          }))
-                        }
-                        placeholder="Preferences for how tasks should be arranged."
-                      />
-                    </div>
-                    <Button
-                      onClick={() =>
-                        updateSettingsMutation.mutate({
-                          aiConfirm: settingsDraft.aiConfirm,
-                          aiRoutine: settingsDraft.aiRoutine,
-                          aiWorkHours: settingsDraft.aiWorkHours,
-                          aiPreferences: settingsDraft.aiPreferences,
-                        })
-                      }
-                      disabled={updateSettingsMutation.isPending}
-                    >
-                      {updateSettingsMutation.isPending
-                        ? "Saving..."
-                        : "Save AI settings"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
+              </>
             )}
 
             {activeTab === "due_dates" && (
-              <div className="space-y-6">
-                <div>
-                  <h4 className="text-base font-semibold text-foreground">
-                    Due dates
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
-                    Control when tasks show a due-soon indicator.
-                  </p>
-                </div>
-                {settingsFeedback && (
-                  <p className="text-sm text-muted-foreground">{settingsFeedback}</p>
-                )}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Due soon indicator</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
-                      <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-                        Window (days)
-                      </span>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={30}
-                        value={settingsDraft.dueSoonDays}
-                        onChange={(event) =>
-                          setSettingsDraft((prev) => ({
-                            ...prev,
-                            dueSoonDays: Number(event.target.value),
-                          }))
-                        }
-                      />
+              <>
+                {(!canUseDueDates && !isAdmin) ? (
+                  <UpgradeNotice featureLabel="Due dates" />
+                ) : (
+                  <div className="space-y-6">
+                    <div>
+                      <h4 className="text-base font-semibold text-foreground">
+                        Due dates
+                      </h4>
+                      <p className="text-sm text-muted-foreground">
+                        Control when tasks show a due-soon indicator.
+                      </p>
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                      Tasks due within this window will show a badge in task lists.
-                    </p>
-                    <Button
-                      onClick={() =>
-                        updateSettingsMutation.mutate({
-                          dueSoonDays: settingsDraft.dueSoonDays,
-                        })
-                      }
-                      disabled={updateSettingsMutation.isPending}
-                    >
-                      {updateSettingsMutation.isPending
-                        ? "Saving..."
-                        : "Save due date settings"}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </div>
+                    {settingsFeedback && (
+                      <p className="text-sm text-muted-foreground">
+                        {settingsFeedback}
+                      </p>
+                    )}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Due soon indicator</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="grid gap-3 lg:grid-cols-[220px_1fr]">
+                          <span className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+                            Window (days)
+                          </span>
+                          <Input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={settingsDraft.dueSoonDays}
+                            onChange={(event) =>
+                              setSettingsDraft((prev) => ({
+                                ...prev,
+                                dueSoonDays: Number(event.target.value),
+                              }))
+                            }
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Tasks due within this window will show a badge in task
+                          lists.
+                        </p>
+                        <Button
+                          onClick={() =>
+                            updateSettingsMutation.mutate({
+                              dueSoonDays: settingsDraft.dueSoonDays,
+                            })
+                          }
+                          disabled={updateSettingsMutation.isPending}
+                        >
+                          {updateSettingsMutation.isPending
+                            ? "Saving..."
+                            : "Save due date settings"}
+                        </Button>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

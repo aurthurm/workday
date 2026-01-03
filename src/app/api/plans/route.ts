@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace, upsertDailyPlan } from "@/lib/data";
 import { rolloverIncompleteTasks } from "@/lib/rollover";
-import { parseSearchParams, dateSchema } from "@/lib/validation";
+import { parseJson, parseSearchParams, dateSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, featureAllowed } from "@/lib/entitlements";
+import { featureNotAvailable } from "@/lib/entitlement-errors";
 
 const isWeekday = (date: Date) => {
   const day = date.getDay();
@@ -393,18 +395,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
 
-  const body = (await request.json()) as {
-    date?: string;
-    visibility?: "team" | "private";
-  };
-
-  if (!body.date) {
-    return NextResponse.json({ error: "Date is required." }, { status: 400 });
+  const parsed = await parseJson(
+    request,
+    z.object({
+      date: dateSchema,
+    })
+  );
+  if (!parsed.ok) {
+    return NextResponse.json({ error: parsed.error }, { status: 400 });
   }
+  const body = parsed.data;
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
   if (!active?.workspace) {
     return NextResponse.json({ error: "Workspace not found." }, { status: 404 });
+  }
+  const entitlements = getEntitlements(session.userId);
+  const today = new Date().toISOString().slice(0, 10);
+  if (body.date > today && !featureAllowed(entitlements, "feature.future_plans")) {
+    return featureNotAvailable("feature.future_plans");
   }
   const defaultVisibility =
     active.workspace.type === "personal" ? "private" : "team";

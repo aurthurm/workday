@@ -6,6 +6,7 @@ import {
   createUser,
   createWorkspace,
   getUserByEmail,
+  setUserPlan,
 } from "@/lib/data";
 import { db } from "@/lib/db";
 import { setSession, setWorkspaceCookie } from "@/lib/auth";
@@ -66,7 +67,8 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await bcrypt.hash(password, 10);
-  const userId = createUser({ email, name, passwordHash });
+  const userId = createUser({ email, name, passwordHash, isAdmin: false });
+  setUserPlan(userId, "free");
 
   const workspaceId = createWorkspace({
     name: parsed.data.workspaceName || `${name}'s Workspace`,

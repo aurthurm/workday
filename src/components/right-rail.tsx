@@ -19,7 +19,8 @@ import { TaskListItem } from "@/components/task-list-item";
 import { TimelinePanel, type TimelineTask } from "@/components/timeline-panel";
 import { TaskDetailPanel, type TaskDetailTask } from "@/components/task-detail-panel";
 import { cn } from "@/lib/utils";
-import { ChevronRight, ChevronLeft, Lightbulb, Clock } from "lucide-react";
+import { ChevronRight, ChevronLeft, Lightbulb, Clock, type LucideIcon } from "lucide-react";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 type Idea = {
   id: string;
@@ -83,6 +84,9 @@ export function RightRail() {
   const pathname = usePathname();
   const showIdeas = pathname === "/today" || pathname === "/history";
   const isHistoryPage = pathname === "/history";
+  const entitlementsQuery = useEntitlements();
+  const canViewTimeline =
+    entitlementsQuery.data?.entitlements.features["feature.view_timeline"] ?? false;
   const [panelOpen, setPanelOpen] = useState(false);
   const [activePanel, setActivePanel] = useState<"ideas" | "timeline">("ideas");
   const [showAddForm, setShowAddForm] = useState(false);
@@ -117,12 +121,19 @@ export function RightRail() {
   });
   const dueSoonDays = settingsQuery.data?.settings.due_soon_days ?? 3;
   const categoryList = categoriesQuery.data?.categories ?? defaultCategories;
-  const rightItems = useMemo(
+  const rightItems = useMemo<
+    Array<{
+      id: "ideas" | "timeline";
+      label: string;
+      icon: LucideIcon;
+      locked?: boolean;
+    }>
+  >(
     () => [
-      { id: "ideas" as const, label: "Idea dump", icon: Lightbulb },
-      { id: "timeline" as const, label: "Timeline", icon: Clock },
+      { id: "ideas", label: "Idea dump", icon: Lightbulb },
+      { id: "timeline", label: "Timeline", icon: Clock, locked: !canViewTimeline },
     ],
-    []
+    [canViewTimeline]
   );
   const activeItem =
     rightItems.find((item) => item.id === activePanel) ?? rightItems[0];
@@ -139,6 +150,13 @@ export function RightRail() {
   );
   const getCategoryColor = (name: string) =>
     categoryColors.get(name) ?? "#64748b";
+
+  useEffect(() => {
+    if (!canViewTimeline && activePanel === "timeline") {
+      setActivePanel("ideas");
+      setPanelOpen(false);
+    }
+  }, [canViewTimeline, activePanel]);
 
   const timelineDate = useMemo(() => {
     // If on history page and a day is selected in kanban, show that day
@@ -691,18 +709,34 @@ export function RightRail() {
                 key={item.id}
                 type="button"
                 className={cn(
-                  "flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 text-muted-foreground transition",
+                  "relative flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 text-muted-foreground transition",
+                  item.locked && "opacity-60",
                   isActive && panelOpen
                     ? "bg-card/60 text-foreground shadow-sm outline outline-2 outline-border/50"
                     : "hover:bg-card/40"
                 )}
-                title={item.label}
+                title={
+                  item.locked ? "Upgrade to unlock" : item.label
+                }
                 onClick={() => {
+                  if (item.locked) {
+                    window.dispatchEvent(
+                      new CustomEvent("upgrade:required", {
+                        detail: { feature: "feature.view_timeline" },
+                      })
+                    );
+                    return;
+                  }
                   setActivePanel(item.id);
                   setPanelOpen(true);
                 }}
               >
                 <Icon className="h-4 w-4" />
+                {item.locked && (
+                  <span className="absolute -right-1 -top-1 rounded-full border border-border bg-card px-1 text-[9px] font-semibold text-foreground">
+                    Up
+                  </span>
+                )}
               </button>
             );
           })}

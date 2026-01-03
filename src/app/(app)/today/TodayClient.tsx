@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { formatRelativeTime } from "@/lib/time";
 import { TaskListDetailPanel } from "@/components/task-list-detail-panel";
+import { useEntitlements } from "@/hooks/use-entitlements";
 
 type PlanResponse = {
   plan: null | {
@@ -98,6 +99,9 @@ const formatEstimated = (minutes: number | null) => {
 };
 
 export default function TodayClient() {
+  const entitlementsQuery = useEntitlements();
+  const canPlanFuture =
+    entitlementsQuery.data?.entitlements.features["feature.future_plans"] ?? false;
   const [selectedDate, setSelectedDate] = useState(() => new Date());
   const [newTask, setNewTask] = useState({
     title: "",
@@ -356,14 +360,26 @@ export default function TodayClient() {
             <p className="text-sm text-muted-foreground">
               There is no plan for this day yet.
             </p>
+            {(() => {
+              const todayKey = new Date().toISOString().slice(0, 10);
+              const isToday = dateValue === todayKey;
+              const canCreate = isToday || canPlanFuture;
+              return (
             <Button
-              onClick={() => createPlanMutation.mutate()}
-              disabled={createPlanMutation.isPending}
+                  onClick={() => createPlanMutation.mutate()}
+                  disabled={!canCreate || createPlanMutation.isPending}
+                  title={
+                    !canCreate ? "Upgrade to create future plans." : undefined
+                  }
             >
-              {dateValue === new Date().toISOString().slice(0, 10)
-                ? "Start today's plan"
-                : "Start future plan"}
+                  {isToday
+                    ? "Start today's plan"
+                    : canPlanFuture
+                    ? "Start future plan"
+                    : "Upgrade to plan ahead"}
             </Button>
+              );
+            })()}
           </CardContent>
         </Card>
       )}

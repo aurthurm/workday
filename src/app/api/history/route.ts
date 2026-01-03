@@ -4,6 +4,8 @@ import { getSession, getWorkspaceCookie } from "@/lib/auth";
 import { getActiveWorkspace } from "@/lib/data";
 import { parseSearchParams, dateSchema } from "@/lib/validation";
 import { z } from "zod";
+import { getEntitlements, featureAllowed } from "@/lib/entitlements";
+import { featureNotAvailable } from "@/lib/entitlement-errors";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -24,6 +26,13 @@ export async function GET(request: Request) {
   }
   const limit = parsed.data.limit ?? 21;
   const filter = parsed.data.filter ?? "history";
+  const entitlements = getEntitlements(session.userId);
+  if (
+    (filter === "future" || filter === "all") &&
+    !featureAllowed(entitlements, "feature.future_plans")
+  ) {
+    return featureNotAvailable("feature.future_plans");
+  }
   const today = new Date().toISOString().slice(0, 10);
   if (!dateSchema.safeParse(today).success) {
     return NextResponse.json({ error: "Invalid date." }, { status: 400 });

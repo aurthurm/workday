@@ -6,6 +6,8 @@ import { randomUUID } from "crypto";
 import { parseJson, uuidSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, limitValue } from "@/lib/entitlements";
+import { limitReached } from "@/lib/entitlement-errors";
 
 export async function GET(
   _request: Request,
@@ -51,6 +53,19 @@ export async function POST(
   const membership = getOrgMembership(session.userId, id);
   if (!membership || !["owner", "admin"].includes(membership.role)) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
+  }
+
+  const entitlements = getEntitlements(session.userId);
+  if (!entitlements.isAdmin) {
+    const limit = limitValue(entitlements, "limit.org_members");
+    const count = db
+      .prepare(
+        "SELECT COUNT(*) as count FROM org_members WHERE org_id = ? AND status != 'disabled'"
+      )
+      .get(id) as { count: number };
+    if (count.count >= limit) {
+      return limitReached("limit.org_members", limit);
+    }
   }
 
   const parsed = await parseJson(

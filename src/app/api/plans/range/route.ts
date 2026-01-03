@@ -6,6 +6,8 @@ import { getActiveWorkspace, upsertDailyPlan } from "@/lib/data";
 import { parseSearchParams, dateSchema } from "@/lib/validation";
 import { z } from "zod";
 import { getClientIp, logEvent } from "@/lib/logger";
+import { getEntitlements, featureAllowed } from "@/lib/entitlements";
+import { featureNotAvailable } from "@/lib/entitlement-errors";
 
 export async function GET(request: Request) {
   const session = await getSession();
@@ -27,6 +29,11 @@ export async function GET(request: Request) {
   const { start, end } = parsed.data;
   if (end < start) {
     return NextResponse.json({ error: "Invalid date range." }, { status: 400 });
+  }
+  const entitlements = getEntitlements(session.userId);
+  const today = new Date().toISOString().slice(0, 10);
+  if (end > today && !featureAllowed(entitlements, "feature.future_plans")) {
+    return featureNotAvailable("feature.future_plans");
   }
 
   const active = getActiveWorkspace(session.userId, await getWorkspaceCookie());
