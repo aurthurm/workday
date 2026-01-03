@@ -71,6 +71,7 @@ type TaskListItemProps = {
   onDeleteRepeat?: (taskId: string, day: string) => Promise<void>;
   onTaskUpdated?: () => void;
   dueSoonDays?: number;
+  readOnly?: boolean;
 };
 
 export function TaskListItem({
@@ -94,6 +95,7 @@ export function TaskListItem({
   onDeleteRepeat,
   onTaskUpdated,
   dueSoonDays = 3,
+  readOnly = false,
 }: TaskListItemProps) {
   const [isEditingTime, setIsEditingTime] = useState(false);
   const [isEditingCategory, setIsEditingCategory] = useState(false);
@@ -129,7 +131,7 @@ export function TaskListItem({
     }
   }, [task.start_time, task.estimated_minutes, isEditingTime, getStartTimeInput]);
 
-  const canDrag = draggable && !isEditingTime;
+  const canDrag = !readOnly && draggable && !isEditingTime;
   const dueBadge = (() => {
     if (!task.due_date) return null;
     const due = new Date(task.due_date);
@@ -176,6 +178,15 @@ export function TaskListItem({
     setEditingSubtaskTitle("");
     setRepeatTillDraft(task.repeat_till ?? "");
   }, [task.id, task.subtasks, task.repeat_till]);
+
+  useEffect(() => {
+    if (!readOnly) return;
+    setIsEditingTime(false);
+    setIsEditingCategory(false);
+    setIsEditingRecurrence(false);
+    setIsShowingSubtasks(false);
+    setIsDetailOpen(false);
+  }, [readOnly]);
 
   useEffect(() => {
     if (!isShowingSubtasks || subtasksLoaded || isLoadingSubtasks) return;
@@ -309,6 +320,7 @@ export function TaskListItem({
           className="text-left text-sm font-medium text-foreground hover:underline"
           onClick={(event) => {
             event.stopPropagation();
+            if (readOnly) return;
             setIsDetailOpen(true);
           }}
         >
@@ -320,38 +332,46 @@ export function TaskListItem({
       </div>
       <div className="mt-2 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="text-xs text-muted-foreground hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsEditingTime((prev) => !prev);
-            }}
-          >
-            ⌚ {formatEstimated(task.estimated_minutes)}
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center text-muted-foreground hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsEditingRecurrence((prev) => !prev);
-            }}
-            aria-label="Edit recurring schedule"
-          >
-            <Repeat className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center text-muted-foreground hover:text-foreground"
-            onClick={(event) => {
-              event.stopPropagation();
-              setIsShowingSubtasks((prev) => !prev);
-            }}
-            aria-label="Show subtasks"
-          >
-            <ListChecks className="h-3.5 w-3.5" />
-          </button>
+          {readOnly ? (
+            <span className="text-xs text-muted-foreground">
+              ⌚ {formatEstimated(task.estimated_minutes)}
+            </span>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsEditingTime((prev) => !prev);
+                }}
+              >
+                ⌚ {formatEstimated(task.estimated_minutes)}
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsEditingRecurrence((prev) => !prev);
+                }}
+                aria-label="Edit recurring schedule"
+              >
+                <Repeat className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center text-muted-foreground hover:text-foreground"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setIsShowingSubtasks((prev) => !prev);
+                }}
+                aria-label="Show subtasks"
+              >
+                <ListChecks className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
           {dueBadge && (
             <span
               className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${dueBadge.className}`}
@@ -392,6 +412,7 @@ export function TaskListItem({
             className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground"
             onClick={(event) => {
               event.stopPropagation();
+              if (readOnly) return;
               setIsEditingCategory(true);
             }}
           >

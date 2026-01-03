@@ -983,6 +983,7 @@ export default function HistoryPage() {
                     variant="list"
                     isSelected={task.id === activeTask?.id}
                     onSelect={() => setSelectedTaskId(task.id)}
+                    readOnly
                     categories={categories}
                     getCategoryColor={getCategoryColor}
                     normalizeStatus={normalizeStatus}

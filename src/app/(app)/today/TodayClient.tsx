@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { formatRelativeTime } from "@/lib/time";
 import { TaskDetailPanel } from "@/components/task-detail-panel";
+import { TaskListItem } from "@/components/task-list-item";
 
 type PlanResponse = {
   plan: null | {
@@ -90,6 +91,12 @@ const statuses = ["planned", "done", "cancelled"] as const;
 const priorities = ["none", "low", "medium", "high"] as const;
 const statusLabel = (status: string) =>
   status === "skipped" ? "cancelled" : status;
+const formatEstimated = (minutes: number | null) => {
+  if (!minutes || minutes <= 0) return "0.00";
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  return `${hours}.${String(mins).padStart(2, "0")}`;
+};
 
 export default function TodayClient() {
   const [selectedDate, setSelectedDate] = useState(() => new Date());
@@ -431,47 +438,87 @@ export default function TodayClient() {
 
                 <div className="grid gap-4 lg:grid-cols-[0.6fr_1.4fr]">
                   <div className="space-y-3">
-                    {plan.tasks.map((task) => {
-                      const dueBadge = getDueBadge(task.due_date);
-                      return (
-                        <button
-                          key={task.id}
-                          className={`w-full rounded-xl border px-3 py-2 text-left text-sm transition ${
-                            task.id === selectedTaskId
-                              ? "border-tide-500 bg-card shadow-lg ring-1 ring-tide-200/70"
-                              : "border-border/70 bg-card/70 hover:border-tide-200"
-                          }`}
-                          onClick={() => setSelectedTaskId(task.id)}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium text-foreground">
-                              {task.title}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {dueBadge && (
-                                <span
-                                  className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${dueBadge.className}`}
-                                >
-                                  {dueBadge.label}
-                                </span>
-                              )}
-                              <span className="status-pill" data-status={task.status}>
-                                {statusLabel(task.status)}
-                              </span>
-                            </div>
-                          </div>
-                          <p className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                            <span
-                              className="h-2 w-2 rounded-full"
-                              style={{
-                                backgroundColor: getCategoryColor(task.category),
-                              }}
-                            />
-                            {task.category} · est {task.estimated_minutes ?? "-"}
-                          </p>
-                        </button>
-                      );
-                    })}
+                    {plan.tasks.map((task) => (
+                      <TaskListItem
+                        key={task.id}
+                        task={task}
+                        day={plan.date}
+                        variant="list"
+                        isSelected={task.id === selectedTaskId}
+                        onSelect={() => setSelectedTaskId(task.id)}
+                        readOnly
+                        categories={categories}
+                        getCategoryColor={getCategoryColor}
+                        normalizeStatus={statusLabel}
+                        formatEstimated={formatEstimated}
+                        getStartTimeInput={(value) =>
+                          value
+                            ? new Date(value).toLocaleTimeString([], {
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: false,
+                              })
+                            : ""
+                        }
+                        onSaveTitle={async (taskId, _day, title) => {
+                          await apiFetch(`/api/tasks/${taskId}`, {
+                            method: "PUT",
+                            body: { title },
+                          });
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                        onSaveTime={async (taskId, _day, startTime, estimatedMinutes) => {
+                          await apiFetch(`/api/tasks/${taskId}`, {
+                            method: "PUT",
+                            body: {
+                              startTime: startTime || null,
+                              estimatedMinutes: estimatedMinutes
+                                ? Number(estimatedMinutes)
+                                : null,
+                            },
+                          });
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                        onSaveCategory={async (taskId, _day, category) => {
+                          await apiFetch(`/api/tasks/${taskId}`, {
+                            method: "PUT",
+                            body: { category },
+                          });
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                        onSaveRecurrence={async (taskId, _day, recurrenceRule) => {
+                          await apiFetch(`/api/tasks/${taskId}`, {
+                            method: "PUT",
+                            body: { recurrenceRule },
+                          });
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                        onSetRepeatTill={async (taskId, _day, repeatTill) => {
+                          await apiFetch(`/api/tasks/${taskId}`, {
+                            method: "PUT",
+                            body: { repeatTill },
+                          });
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                        onDeleteRepeat={async (taskId) => {
+                          await apiFetch(`/api/tasks/${taskId}`, {
+                            method: "PUT",
+                            body: { recurrenceRule: null, repeatTill: null },
+                          });
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                        onTaskUpdated={() => {
+                          planQuery.refetch();
+                          emitTimelineUpdate();
+                        }}
+                      />
+                    ))}
                     {plan.tasks.length === 0 && (
                       <p className="text-sm text-muted-foreground">
                         No tasks yet for this day.
